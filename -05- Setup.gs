@@ -290,7 +290,7 @@ const Setup = {
    */
   _cloneTemplateForSubject: function(ss, templateSheet, templateProtection, subject) {
     const newSheet = templateSheet.copyTo(ss).setName(subject.code);
-    newSheet.getRange(2, 4).setValue(subject.code);
+    newSheet.getRange(2, 4).setValue(subject.name);
     
     // Inject the full subject name into the newly duplicated named range
     const nameRangeStr = `${subject.code}!${CONFIG.SCOPE.targetSubjectNameRange}`;
