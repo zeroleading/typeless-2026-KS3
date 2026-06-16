@@ -107,9 +107,9 @@ const DataService = {
     const data = range.getValues();
     data.forEach(row => {
       const fullName = row[0];
-      const rawAdNo = row[1];
-      const reg = row[2];
-      const tutor = row[3];
+      const rawAdNo = row[2];
+      const reg = row[3];
+      const tutor = row[5];
       
       if (rawAdNo && String(rawAdNo).toLowerCase() !== 'adno') { 
         // Remove padding, just trim invisible spaces for exact internal matching
@@ -207,6 +207,7 @@ const DataService = {
       if (studentMap[adNo]) {
         
         // 1. Grab raw values that need translation
+        const rawTg = tgIdx > -1 ? row[tgIdx] : '';
         const rawCrnt = crntIdx > -1 ? row[crntIdx] : '';
         const rawCi1 = ci1Idx > -1 ? row[ci1Idx] : '';
         const rawCi2 = ci2Idx > -1 ? row[ci2Idx] : '';
@@ -217,7 +218,7 @@ const DataService = {
         const subjectData = {
           subjectName: sheetName,
           teacher: teacherIdx > -1 ? row[teacherIdx] : '',
-          tg: tgIdx > -1 ? row[tgIdx] : '', // TG is raw
+          tg: this._translate(rawTg, 'CRNT', translations), // TG is now translated using CRNT dictionary
           crnt: this._translate(rawCrnt, 'CRNT', translations), // CRNT is translated
           ci1: this._translate(rawCi1, 'CI', translations),
           ci2: this._translate(rawCi2, 'CI', translations),
