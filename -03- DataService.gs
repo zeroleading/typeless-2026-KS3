@@ -109,7 +109,7 @@ const DataService = {
       const fullName = row[0];
       const rawAdNo = row[2]; // Updated column index based on diagnostics
       const reg = row[3];     // Adjust these indices if necessary to match your actual sheet
-      const tutor = row[5];   // Adjust these indices if necessary to match your actual sheet
+      const tutor = row[4];   // Adjust these indices if necessary to match your actual sheet
       
       if (rawAdNo && String(rawAdNo).toLowerCase() !== 'adno') { 
         // Use stripped, unpadded admission numbers for flawless internal matching
@@ -171,6 +171,12 @@ const DataService = {
 
   _processSubjectSheet: function(ss, sheet, studentMap, fieldMap, translations) {
     const sheetName = sheet.getName();
+    
+    // Attempt to grab the full subject name from the named range, fallback to sheet code if missing
+    const nameRangeStr = `${sheetName}!${CONFIG.SCOPE.targetSubjectNameRange}`;
+    const nameRange = ss.getRangeByName(nameRangeStr);
+    const fullSubjectName = nameRange ? String(nameRange.getValue()).trim() : sheetName;
+
     const rangeName = `${sheetName}!thisSubjectAssessment`;
     const range = ss.getRangeByName(rangeName);
     if (!range) return; 
@@ -213,9 +219,9 @@ const DataService = {
 
         // 2. Explicitly build the subject profile and translate specific fields
         const subjectData = {
-          subjectName: sheetName,
+          subjectName: fullSubjectName, // Now passing the full descriptive name
           teacher: teacherIdx > -1 ? row[teacherIdx] : '',
-          tg: this._translate(rawTg, 'CRNT', translations), // Target grade is now translated using CRNT dictionary
+          tg: this._translate(rawTg, 'CRNT', translations), 
           crnt: this._translate(rawCrnt, 'CRNT', translations), 
           ci1: this._translate(rawCi1, 'CI', translations),
           ci2: this._translate(rawCi2, 'CI', translations),
