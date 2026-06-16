@@ -109,16 +109,16 @@ const DocumentBuilder = {
 
     subjects.forEach(subject => {
       const newRow = targetTable.appendTableRow(templateRow.copy());
-      newRow.replaceText('{{subjectName}}', subject.subjectName || '-');
-      newRow.replaceText('{{teacher}}', subject.teacher || '-');
+      newRow.replaceText('{{subjectName}}', subject.subjectName || '');
+      newRow.replaceText('{{teacher}}', subject.teacher || '');
       newRow.replaceText('{{tg}}', subject.tg || '-');
-      newRow.replaceText('{{crnt}}', subject.crnt || '-');
-      newRow.replaceText('{{ci1}}', subject.ci1 || '-');
-      newRow.replaceText('{{ci2}}', subject.ci2 || '-');
-      newRow.replaceText('{{ci3}}', subject.ci3 || '-');
-      newRow.replaceText('{{ci4}}', subject.ci4 || '-');
-      newRow.replaceText('{{nextSteps1}}', subject.nextSteps1 || '-');
-      newRow.replaceText('{{nextSteps2}}', subject.nextSteps2 || '-');
+      newRow.replaceText('{{crnt}}', subject.crnt || '');
+      newRow.replaceText('{{ci1}}', subject.ci1 || '');
+      newRow.replaceText('{{ci2}}', subject.ci2 || '');
+      newRow.replaceText('{{ci3}}', subject.ci3 || '');
+      newRow.replaceText('{{ci4}}', subject.ci4 || '');
+      newRow.replaceText('{{nextSteps1}}', subject.nextSteps1 || '');
+      newRow.replaceText('{{nextSteps2}}', subject.nextSteps2 || '');
     });
 
     targetTable.removeRow(templateRowIndex);
