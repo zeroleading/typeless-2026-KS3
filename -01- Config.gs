@@ -9,7 +9,7 @@ const CONFIG = Object.freeze({
   // 1. Global Settings
   GLOBAL: {
     CONTROL_SHEET_NAME: 'control',
-    OUTPUT_FOLDER_ID: 'YOUR_MAIN_OUTPUT_FOLDER_ID', 
+    OUTPUT_FOLDER_ID: '18JTL77flcaOV7Us93W_hJnf3_veATeFp', 
   },
 
   // 2. Authorisation Controls
@@ -70,11 +70,11 @@ const CONFIG = Object.freeze({
   REPORTS: {
     PROGRESS_REVIEW: {
       name: 'Progress Review',
-      templateId: 'YOUR_PR_TEMPLATE_ID'
+      templateId: '1G7XZ9CxNBsQ2JMx4xX9mAA4ap_ZdDLTGvnCLPDzXo-U'
     },
     NEXT_STEPS_SUMMARY: {
       name: 'Next Steps Summary',
-      templateId: 'YOUR_NEXT_STEPS_TEMPLATE_ID'
+      templateId: '1Z6O8k6C67vDBp3heHZ-9reT5Glfnc8lLZ-dqpUivf74'
     }
   }
 });
