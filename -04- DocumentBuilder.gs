@@ -6,14 +6,22 @@
 const DocumentBuilder = {
 
   generateBatch: function(reportConfig, studentPayload) {
+    const ss = SpreadsheetApp.getActiveSpreadsheet(); // Grab active sheet for progress toasts
     const templateFile = DriveApp.getFileById(reportConfig.templateId);
     const outputFolder = DriveApp.getFolderById(CONFIG.GLOBAL.OUTPUT_FOLDER_ID);
     
     const dateStr = Utilities.formatDate(new Date(), "Europe/London", "yyyy-MM-dd");
     const batchFolder = outputFolder.createFolder(`${reportConfig.name} - ${dateStr}`);
 
-    studentPayload.forEach(student => {
+    const totalStudents = studentPayload.length;
+
+    studentPayload.forEach((student, index) => {
       if (student.subjects && student.subjects.length > 0) {
+        
+        // Live Progress Indicator
+        // Keeps the toast alive for 10 seconds, or until the next loop overwrites it
+        ss.toast(`Merging document ${index + 1} of ${totalStudents}...\n(${student.name})`, 'Progress Tracker', 10);
+        
         this._buildSingleDocument(student, templateFile, batchFolder, reportConfig.name);
       }
     });
