@@ -113,7 +113,7 @@ const DataService = {
       const fullName = row[0];
       const rawAdNo = row[2]; // Updated column index based on diagnostics
       const reg = row[3];     // Adjust these indices if necessary to match your actual sheet
-      const tutor = row[4];   // Adjust these indices if necessary to match your actual sheet
+      const tutor = row[5];   // Adjust these indices if necessary to match your actual sheet
       
       if (rawAdNo && String(rawAdNo).toLowerCase() !== 'adno') { 
         // Use stripped, unpadded admission numbers for flawless internal matching
