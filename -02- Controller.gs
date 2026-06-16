@@ -92,25 +92,52 @@ function _runReportBatch(reportConfig, reportFriendlyName) {
     }
   }
 
-  const response = ui.alert('Confirm', `Generate ${reportFriendlyName}?`, ui.ButtonSet.YES_NO);
+  // 1. Prompt for test batch size instead of simple YES/NO confirmation
+  const batchPrompt = ui.prompt(
+    'Confirm Generation',
+    `Generate ${reportFriendlyName}?\n\nEnter a number to run a small test batch, or leave blank to run ALL students:`,
+    ui.ButtonSet.OK_CANCEL
+  );
   
-  if (response === ui.Button.YES) {
-    ss.toast(`Gathering data for ${reportFriendlyName}...`, 'Typeless');
-    
-    // 1. Build the data payload
-    const payload = DataService.buildStudentDataPayload(reportConfig);
-    
-    if (payload.length === 0) {
-      ui.alert('Error', 'No student data found. Please check the master list and subject sheets.', ui.ButtonSet.OK);
+  // Abort if the user clicked Cancel or the X button
+  if (batchPrompt.getSelectedButton() !== ui.Button.OK) {
+    ss.toast('Report generation cancelled.', 'Typeless');
+    return;
+  }
+  
+  // Parse the user's input
+  const batchResponseText = batchPrompt.getResponseText().trim();
+  let batchLimit = null;
+
+  if (batchResponseText !== '') {
+    batchLimit = parseInt(batchResponseText, 10);
+    // The Why: Protect against users typing "five" instead of "5", or entering negative numbers
+    if (isNaN(batchLimit) || batchLimit <= 0) {
+      ui.alert('Error', 'Please enter a valid number greater than 0, or leave the box blank to run all.', ui.ButtonSet.OK);
       return;
     }
-
-    ss.toast(`Generating documents for ${payload.length} students...`, 'Typeless');
-    
-    // 2. Generate the documents
-    const folderId = DocumentBuilder.generateBatch(reportConfig, payload);
-    
-    // 3. Alert completion
-    ui.alert('Merge Complete', `Documents generated successfully.\nFolder ID: ${folderId}`, ui.ButtonSet.OK);
   }
+
+  ss.toast(`Gathering data for ${reportFriendlyName}...`, 'Typeless');
+  
+  // 2. Build the full data payload
+  let payload = DataService.buildStudentDataPayload(reportConfig);
+  
+  if (payload.length === 0) {
+    ui.alert('Error', 'No student data found. Please check the master list and subject sheets.', ui.ButtonSet.OK);
+    return;
+  }
+
+  // 3. Apply the batch limit if the user entered a valid number
+  if (batchLimit && batchLimit < payload.length) {
+    payload = payload.slice(0, batchLimit);
+  }
+
+  ss.toast(`Generating documents for ${payload.length} students...`, 'Typeless');
+  
+  // 4. Generate the documents
+  const folderId = DocumentBuilder.generateBatch(reportConfig, payload);
+  
+  // 5. Alert completion
+  ui.alert('Merge Complete', `Documents generated successfully.\nFolder ID: ${folderId}`, ui.ButtonSet.OK);
 }
