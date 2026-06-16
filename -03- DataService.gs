@@ -11,6 +11,8 @@ const DataService = {
     // 1. Fetch Global Batch Values
     const yearGroup = ss.getRangeByName(CONFIG.SCOPE.yearGroup)?.getValue() || '';
     const collection = ss.getRangeByName(CONFIG.SCOPE.collection)?.getValue() || '';
+    const academicYear = ss.getRangeByName(CONFIG.SCOPE.academicYear)?.getValue() || '';
+    const shortName = ss.getRangeByName(CONFIG.SCOPE.shortName)?.getValue() || '';
 
     // 2. Fetch Control Panel Maps & Dictionaries
     const fieldMap = this._getDynamicFieldMap(ss);
@@ -34,7 +36,9 @@ const DataService = {
     return Object.values(studentMap).map(student => ({
       ...student,
       yearGroup: yearGroup,
-      collection: collection
+      collection: collection,
+      academicYear: academicYear,
+      shortName: shortName
     }));
   },
 

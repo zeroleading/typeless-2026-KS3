@@ -11,7 +11,18 @@ const DocumentBuilder = {
     const outputFolder = DriveApp.getFolderById(CONFIG.GLOBAL.OUTPUT_FOLDER_ID);
     
     const dateStr = Utilities.formatDate(new Date(), "Europe/London", "yyyy-MM-dd");
-    const batchFolder = outputFolder.createFolder(`${reportConfig.name} - ${dateStr}`);
+    
+    // Extract globals from the first student payload for folder naming
+    const academicYear = studentPayload[0]?.academicYear || '';
+    const collection = studentPayload[0]?.collection || '';
+    const yearGroup = studentPayload[0]?.yearGroup || '';
+    
+    let folderName = `${academicYear} ${collection} ${yearGroup} ${dateStr}`.trim();
+    if (reportConfig.name === CONFIG.REPORTS.NEXT_STEPS_SUMMARY.name) {
+      folderName += " next-steps";
+    }
+    
+    const batchFolder = outputFolder.createFolder(folderName);
 
     const totalStudents = studentPayload.length;
 
@@ -30,17 +41,17 @@ const DocumentBuilder = {
   },
 
   _buildSingleDocument: function(student, templateFile, destinationFolder, reportName) {
-    // Pad the admission number to 6 digits specifically for the filename so Drive sorts them neatly
-    const paddedAdNo = String(student.adNo).padStart(6, '0');
-    const docName = `${paddedAdNo} - ${student.name} - ${reportName}`;
+    const paddedAdNo = String(student.adNo).padStart(5, '0');
     
-    const newFile = templateFile.makeCopy(docName, destinationFolder);
-    const doc = DocumentApp.openById(newFile.getId());
-    const body = doc.getBody();
-    const header = doc.getHeader();
-    const footer = doc.getFooter();
+    // Format: [reg] [name] [paddedAdno] [shortName]
+    let fileName = `${student.reg} ${student.name} ${paddedAdNo} ${student.shortName || ''}`.trim();
+    if (reportName === CONFIG.REPORTS.NEXT_STEPS_SUMMARY.name) {
+      fileName += " next-steps";
+    }
 
-    // 1. Replace Global Variables 
+    const newDocFile = templateFile.makeCopy(fileName, destinationFolder);
+    const newDoc = DocumentApp.openById(newDocFile.getId());
+    const body = newDoc.getBody();
     this._replaceGlobalPlaceholders(body, student);
     if (header) this._replaceGlobalPlaceholders(header, student);
     if (footer) this._replaceGlobalPlaceholders(footer, student);
@@ -98,16 +109,16 @@ const DocumentBuilder = {
 
     subjects.forEach(subject => {
       const newRow = targetTable.appendTableRow(templateRow.copy());
-      newRow.replaceText('{{subjectName}}', subject.subjectName || '');
-      newRow.replaceText('{{teacher}}', subject.teacher || '');
+      newRow.replaceText('{{subjectName}}', subject.subjectName || '-');
+      newRow.replaceText('{{teacher}}', subject.teacher || '-');
       newRow.replaceText('{{tg}}', subject.tg || '-');
-      newRow.replaceText('{{crnt}}', subject.crnt || '');
-      newRow.replaceText('{{ci1}}', subject.ci1 || '');
-      newRow.replaceText('{{ci2}}', subject.ci2 || '');
-      newRow.replaceText('{{ci3}}', subject.ci3 || '');
-      newRow.replaceText('{{ci4}}', subject.ci4 || '');
-      newRow.replaceText('{{nextSteps1}}', subject.nextSteps1 || '');
-      newRow.replaceText('{{nextSteps2}}', subject.nextSteps2 || '');
+      newRow.replaceText('{{crnt}}', subject.crnt || '-');
+      newRow.replaceText('{{ci1}}', subject.ci1 || '-');
+      newRow.replaceText('{{ci2}}', subject.ci2 || '-');
+      newRow.replaceText('{{ci3}}', subject.ci3 || '-');
+      newRow.replaceText('{{ci4}}', subject.ci4 || '-');
+      newRow.replaceText('{{nextSteps1}}', subject.nextSteps1 || '-');
+      newRow.replaceText('{{nextSteps2}}', subject.nextSteps2 || '-');
     });
 
     targetTable.removeRow(templateRowIndex);
