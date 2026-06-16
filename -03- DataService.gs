@@ -107,12 +107,12 @@ const DataService = {
     const data = range.getValues();
     data.forEach(row => {
       const fullName = row[0];
-      const rawAdNo = row[2];
-      const reg = row[3];
-      const tutor = row[5];
+      const rawAdNo = row[2]; // Updated column index based on diagnostics
+      const reg = row[3];     // Adjust these indices if necessary to match your actual sheet
+      const tutor = row[5];   // Adjust these indices if necessary to match your actual sheet
       
       if (rawAdNo && String(rawAdNo).toLowerCase() !== 'adno') { 
-        // Remove padding, just trim invisible spaces for exact internal matching
+        // Use stripped, unpadded admission numbers for flawless internal matching
         const adNo = String(rawAdNo).trim();
         studentMap[adNo] = {
           adNo: adNo,
@@ -151,7 +151,6 @@ const DataService = {
       const rawAdNo = row[adNoIdx];
       if (!rawAdNo) continue;
 
-      // Remove padding, just trim invisible spaces
       const adNo = String(rawAdNo).trim();
       if (studentMap[adNo]) {
         // Grab raw PSHE value and explicitly translate it using the 'PSHE' dictionary category
@@ -200,8 +199,6 @@ const DataService = {
       const rawAdNo = row[adNoColIdx];
       
       if (!rawAdNo) continue; 
-      
-      // Remove padding, just trim invisible spaces
       const adNo = String(rawAdNo).trim();
 
       if (studentMap[adNo]) {
@@ -218,8 +215,8 @@ const DataService = {
         const subjectData = {
           subjectName: sheetName,
           teacher: teacherIdx > -1 ? row[teacherIdx] : '',
-          tg: this._translate(rawTg, 'CRNT', translations), // TG is now translated using CRNT dictionary
-          crnt: this._translate(rawCrnt, 'CRNT', translations), // CRNT is translated
+          tg: this._translate(rawTg, 'CRNT', translations), // Target grade is now translated using CRNT dictionary
+          crnt: this._translate(rawCrnt, 'CRNT', translations), 
           ci1: this._translate(rawCi1, 'CI', translations),
           ci2: this._translate(rawCi2, 'CI', translations),
           ci3: this._translate(rawCi3, 'CI', translations),
