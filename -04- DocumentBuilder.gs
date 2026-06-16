@@ -1,6 +1,6 @@
 /**
  * DocumentBuilder.gs
- * Handles the generation of Google Docs by cloning templates and injecting data.
+ * Handles the generation of Google Docs from templates.
  */
 
 const DocumentBuilder = {
@@ -17,20 +17,19 @@ const DocumentBuilder = {
     const collection = studentPayload[0]?.collection || '';
     const yearGroup = studentPayload[0]?.yearGroup || '';
     
+    // Format: [academicYear] [collection] [yearGroup] [datestamp]
     let folderName = `${academicYear} ${collection} ${yearGroup} ${dateStr}`.trim();
     if (reportConfig.name === CONFIG.REPORTS.NEXT_STEPS_SUMMARY.name) {
       folderName += " next-steps";
     }
     
     const batchFolder = outputFolder.createFolder(folderName);
-
     const totalStudents = studentPayload.length;
 
     studentPayload.forEach((student, index) => {
       if (student.subjects && student.subjects.length > 0) {
         
         // Live Progress Indicator
-        // Keeps the toast alive for 10 seconds, or until the next loop overwrites it
         ss.toast(`Merging document ${index + 1} of ${totalStudents}...\n(${student.name})`, 'Progress Tracker', 10);
         
         this._buildSingleDocument(student, templateFile, batchFolder, reportConfig.name);
@@ -51,101 +50,89 @@ const DocumentBuilder = {
 
     const newDocFile = templateFile.makeCopy(fileName, destinationFolder);
     const newDoc = DocumentApp.openById(newDocFile.getId());
+    
+    // Define the specific sections of the document
     const body = newDoc.getBody();
-    this._replaceGlobalPlaceholders(body, student);
-    if (header) this._replaceGlobalPlaceholders(header, student);
-    if (footer) this._replaceGlobalPlaceholders(footer, student);
+    const header = newDoc.getHeader(); // This defines 'header' to fix your ReferenceError!
+    const footer = newDoc.getFooter();
 
-    // 2. Process the dynamic Subject Table
+    // Helper function to replace text safely in any document section
+    const replaceGlobalsInSection = (section) => {
+      if (!section) return; // Safely skip if the template has no header/footer
+      
+      section.replaceText('_Name_', student.name || '');
+      section.replaceText('_Reg_', student.reg || '');
+      section.replaceText('_AdNo_', paddedAdNo);
+      section.replaceText('_Tutor_', student.tutor || '');
+      section.replaceText('_Date_', Utilities.formatDate(new Date(), "Europe/London", "dd/MM/yyyy"));
+      section.replaceText('_YearGroup_', student.yearGroup || '');
+      section.replaceText('_Collection_', student.collection || '');
+      
+      if (student.tutorInfo) {
+        section.replaceText('_AttPercent_', student.tutorInfo.percentAtt || '-');
+        section.replaceText('_PossSessions_', student.tutorInfo.possibleSessions || '-');
+        section.replaceText('_AuthAbs_', student.tutorInfo.authAbsences || '0');
+        section.replaceText('_UnauthAbs_', student.tutorInfo.unauthAbsences || '0');
+        section.replaceText('_Lates_', student.tutorInfo.lates || '0');
+        section.replaceText('_PSHE_', student.tutorInfo.pshe || '-');
+      }
+    };
+
+    // Apply the global replacements to the body, header, and footer automatically
+    replaceGlobalsInSection(body);
+    replaceGlobalsInSection(header);
+    replaceGlobalsInSection(footer);
+
+    // Finally, populate the dynamic subjects table in the main body
     this._populateSubjectTable(body, student.subjects);
 
-    // 3. Post-Merge Polish: Make any raw URLs clickable
-    this._makeUrlsClickable(body);
-
-    doc.saveAndClose();
-  },
-
-  _replaceGlobalPlaceholders: function(element, student) {
-    const dateStr = Utilities.formatDate(new Date(), "Europe/London", "MMMM yyyy");
-    element.replaceText('_Name_', student.name);
-    element.replaceText('_Reg_', student.reg);
-    element.replaceText('_AdNo_', student.adNo);
-    element.replaceText('_Tutor_', student.tutor);
-    element.replaceText('_Date_', dateStr);
-    element.replaceText('_YearGroup_', student.yearGroup || '');
-    element.replaceText('_Collection_', student.collection || '');
-    
-    // Replace Tutor Placeholders
-    if (student.tutorInfo) {
-      element.replaceText('_AttPercent_', student.tutorInfo.percentAtt || '-');
-      element.replaceText('_PossSessions_', student.tutorInfo.possibleSessions || '-');
-      element.replaceText('_AuthAbs_', student.tutorInfo.authAbsences || '0');
-      element.replaceText('_UnauthAbs_', student.tutorInfo.unauthAbsences || '0');
-      element.replaceText('_Lates_', student.tutorInfo.lates || '0');
-      element.replaceText('_PSHE_', student.tutorInfo.pshe || '-');
-    }
+    newDoc.saveAndClose();
   },
 
   _populateSubjectTable: function(body, subjects) {
     const tables = body.getTables();
+    if (tables.length === 0) return;
+
+    // Find the table that contains our template tags
     let targetTable = null;
+    let templateRow = null;
     let templateRowIndex = -1;
 
-    for (let i = 0; i < tables.length; i++) {
-      const table = tables[i];
+    for (let t = 0; t < tables.length; t++) {
+      const table = tables[t];
       for (let r = 0; r < table.getNumRows(); r++) {
-        if (table.getRow(r).getText().includes('{{subjectName}}')) {
+        const row = table.getRow(r);
+        if (row.getText().includes('{{subjectName}}')) {
           targetTable = table;
+          templateRow = row.copy();
           templateRowIndex = r;
+          // Remove the original template row
+          table.removeRow(r);
           break;
         }
       }
       if (targetTable) break;
     }
 
-    if (!targetTable || templateRowIndex === -1) return;
+    if (!targetTable || !templateRow) return;
 
-    const templateRow = targetTable.getRow(templateRowIndex);
-
-    subjects.forEach(subject => {
-      const newRow = targetTable.appendTableRow(templateRow.copy());
-      newRow.replaceText('{{subjectName}}', subject.subjectName || '');
-      newRow.replaceText('{{teacher}}', subject.teacher || '');
-      newRow.replaceText('{{tg}}', subject.tg || '-');
-      newRow.replaceText('{{crnt}}', subject.crnt || '');
-      newRow.replaceText('{{ci1}}', subject.ci1 || '');
-      newRow.replaceText('{{ci2}}', subject.ci2 || '');
-      newRow.replaceText('{{ci3}}', subject.ci3 || '');
-      newRow.replaceText('{{ci4}}', subject.ci4 || '');
-      newRow.replaceText('{{nextSteps1}}', subject.nextSteps1 || '');
-      newRow.replaceText('{{nextSteps2}}', subject.nextSteps2 || '');
+    // Add a row for each subject and replace the specific tags
+    subjects.forEach((subj, index) => {
+      const newRow = templateRow.copy();
+      
+      newRow.replaceText('{{subjectName}}', subj.subjectName || '');
+      newRow.replaceText('{{teacher}}', subj.teacher || '');
+      newRow.replaceText('{{tg}}', subj.tg || '');
+      newRow.replaceText('{{crnt}}', subj.crnt || '');
+      newRow.replaceText('{{ci1}}', subj.ci1 || '');
+      newRow.replaceText('{{ci2}}', subj.ci2 || '');
+      newRow.replaceText('{{ci3}}', subj.ci3 || '');
+      newRow.replaceText('{{ci4}}', subj.ci4 || '');
+      newRow.replaceText('{{nextSteps1}}', subj.nextSteps1 || '');
+      newRow.replaceText('{{nextSteps2}}', subj.nextSteps2 || '');
+      
+      targetTable.insertTableRow(templateRowIndex + index, newRow);
     });
-
-    targetTable.removeRow(templateRowIndex);
-  },
-
-  /**
-   * Helper: Sweeps the document body and converts raw text URLs into actual hyperlinks.
-   * @private
-   */
-  _makeUrlsClickable: function(body) {
-    const URL_PATTERN = 'http[s]?://[-a-zA-Z0-9@:%_+.~#?&//=]*';
-    let foundElement = body.findText(URL_PATTERN);
-    
-    while (foundElement !== null) {
-      const foundText = foundElement.getElement().asText();
-      const start = foundElement.getStartOffset();
-      const end = foundElement.getEndOffsetInclusive();
-      
-      // Extract the exact URL string
-      const url = foundText.getText().substring(start, end + 1);
-      
-      // Set the link on that specific text range
-      foundText.setLinkUrl(start, end, url);
-      
-      // Find the next occurrence
-      foundElement = body.findText(URL_PATTERN, foundElement);
-    }
   }
 
 };
