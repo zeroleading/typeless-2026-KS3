@@ -112,7 +112,8 @@ const DataService = {
       const tutor = row[3];
       
       if (rawAdNo && String(rawAdNo).toLowerCase() !== 'adno') { 
-        const adNo = String(rawAdNo).padStart(6, '0');
+        // Remove padding, just trim invisible spaces for exact internal matching
+        const adNo = String(rawAdNo).trim();
         studentMap[adNo] = {
           adNo: adNo,
           name: fullName,
@@ -150,7 +151,8 @@ const DataService = {
       const rawAdNo = row[adNoIdx];
       if (!rawAdNo) continue;
 
-      const adNo = String(rawAdNo).padStart(6, '0');
+      // Remove padding, just trim invisible spaces
+      const adNo = String(rawAdNo).trim();
       if (studentMap[adNo]) {
         // Grab raw PSHE value and explicitly translate it using the 'PSHE' dictionary category
         const rawPshe = psheIdx > -1 ? row[psheIdx] : '';
@@ -198,7 +200,9 @@ const DataService = {
       const rawAdNo = row[adNoColIdx];
       
       if (!rawAdNo) continue; 
-      const adNo = String(rawAdNo).padStart(6, '0');
+      
+      // Remove padding, just trim invisible spaces
+      const adNo = String(rawAdNo).trim();
 
       if (studentMap[adNo]) {
         

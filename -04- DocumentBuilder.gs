@@ -22,7 +22,10 @@ const DocumentBuilder = {
   },
 
   _buildSingleDocument: function(student, templateFile, destinationFolder, reportName) {
-    const docName = `${student.adNo} - ${student.name} - ${reportName}`;
+    // Pad the admission number to 6 digits specifically for the filename so Drive sorts them neatly
+    const paddedAdNo = String(student.adNo).padStart(6, '0');
+    const docName = `${paddedAdNo} - ${student.name} - ${reportName}`;
+    
     const newFile = templateFile.makeCopy(docName, destinationFolder);
     const doc = DocumentApp.openById(newFile.getId());
     const body = doc.getBody();
