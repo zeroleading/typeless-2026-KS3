@@ -53,13 +53,14 @@ const DocumentBuilder = {
     element.replaceText('_YearGroup_', student.yearGroup || '');
     element.replaceText('_Collection_', student.collection || '');
     
-    // Replace Attendance Placeholders
-    if (student.attendance) {
-      element.replaceText('_AttPercent_', student.attendance.percentAtt || '-');
-      element.replaceText('_AuthAbs_', student.attendance.authAbsences || '0');
-      element.replaceText('_UnauthAbs_', student.attendance.unauthAbsences || '0');
-      element.replaceText('_Lates_', student.attendance.lates || '0');
-      element.replaceText('_PSHE_', student.attendance.pshe || '-');
+    // Replace Tutor Placeholders
+    if (student.tutorInfo) {
+      element.replaceText('_AttPercent_', student.tutorInfo.percentAtt || '-');
+      element.replaceText('_PossSessions_', student.tutorInfo.possibleSessions || '-');
+      element.replaceText('_AuthAbs_', student.tutorInfo.authAbsences || '0');
+      element.replaceText('_UnauthAbs_', student.tutorInfo.unauthAbsences || '0');
+      element.replaceText('_Lates_', student.tutorInfo.lates || '0');
+      element.replaceText('_PSHE_', student.tutorInfo.pshe || '-');
     }
   },
 

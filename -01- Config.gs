@@ -47,12 +47,13 @@ const CONFIG = Object.freeze({
   // 5. Fallback Field Mapper 
   // Used only if the scopeFieldMap named range is missing or broken.
   FALLBACK_FIELD_MAP: {
-    att_adno: 'adno',
-    att_percent: 'att %',
-    att_auth: 'auth abs',
-    att_unauth: 'unauth abs',
-    att_lates: 'lates',
-    att_pshe: 'pshe engagement',
+    tut_adno: 'adno',
+    tut_percent: 'att %',
+    tut_poss: 'possible sessions',
+    tut_auth: 'auth abs',
+    tut_unauth: 'unauth abs',
+    tut_lates: 'lates',
+    tut_pshe: 'pshe engagement',
     subj_adno: 'adno',
     subj_teacher: 'teacher',
     subj_tg: 'tg',

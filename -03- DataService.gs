@@ -18,7 +18,7 @@ const DataService = {
 
     // 3. Build base maps and attach data
     const studentMap = this._getMasterStudentList(ss);
-    this._attachAttendanceData(ss, studentMap, fieldMap, translations);
+    this._attachTutorData(ss, studentMap, fieldMap, translations);
 
     // 4. Process Subject Sheets
     const allSheets = ss.getSheets();
@@ -118,7 +118,7 @@ const DataService = {
           name: fullName,
           reg: reg,
           tutor: tutor,
-          attendance: {}, 
+          tutorInfo: {}, 
           subjects: [] 
         };
       }
@@ -126,25 +126,26 @@ const DataService = {
     return studentMap;
   },
 
-  _attachAttendanceData: function(ss, studentMap, fieldMap, translations) {
-    const tutorSheet = ss.getSheetByName('Tutor');
-    if (!tutorSheet) return;
+  _attachTutorData: function(ss, studentMap, fieldMap, translations) {
+    const range = ss.getRangeByName('tutorAssessment');
+    if (!range) return;
 
-    const data = tutorSheet.getDataRange().getValues();
-    if (data.length < 2) return;
+    const data = range.getValues();
+    if (data.length < 3) return;
 
     const headers = data[0].map(h => String(h).toLowerCase().trim());
     
-    const adNoIdx = headers.indexOf((fieldMap['att_adno'] || '').toLowerCase());
-    const attIdx = headers.indexOf((fieldMap['att_percent'] || '').toLowerCase());
-    const authIdx = headers.indexOf((fieldMap['att_auth'] || '').toLowerCase());
-    const unauthIdx = headers.indexOf((fieldMap['att_unauth'] || '').toLowerCase());
-    const latesIdx = headers.indexOf((fieldMap['att_lates'] || '').toLowerCase());
-    const psheIdx = headers.indexOf((fieldMap['att_pshe'] || '').toLowerCase());
+    const adNoIdx = headers.indexOf((fieldMap['tut_adno'] || '').toLowerCase());
+    const attIdx = headers.indexOf((fieldMap['tut_percent'] || '').toLowerCase());
+    const possIdx = headers.indexOf((fieldMap['tut_poss'] || '').toLowerCase());
+    const authIdx = headers.indexOf((fieldMap['tut_auth'] || '').toLowerCase());
+    const unauthIdx = headers.indexOf((fieldMap['tut_unauth'] || '').toLowerCase());
+    const latesIdx = headers.indexOf((fieldMap['tut_lates'] || '').toLowerCase());
+    const psheIdx = headers.indexOf((fieldMap['tut_pshe'] || '').toLowerCase());
 
     if (adNoIdx === -1) return;
 
-    for (let i = 1; i < data.length; i++) {
+    for (let i = 2; i < data.length; i++) {
       const row = data[i];
       const rawAdNo = row[adNoIdx];
       if (!rawAdNo) continue;
@@ -155,8 +156,9 @@ const DataService = {
         const rawPshe = psheIdx > -1 ? row[psheIdx] : '';
         const translatedPshe = this._translate(rawPshe, 'PSHE', translations);
 
-        studentMap[adNo].attendance = {
+        studentMap[adNo].tutorInfo = {
           percentAtt: attIdx > -1 ? row[attIdx] : '',
+          possibleSessions: possIdx > -1 ? row[possIdx] : '',
           authAbsences: authIdx > -1 ? row[authIdx] : '',
           unauthAbsences: unauthIdx > -1 ? row[unauthIdx] : '',
           lates: latesIdx > -1 ? row[latesIdx] : '',
