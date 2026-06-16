@@ -25,7 +25,6 @@ function buildDynamicMenu() {
   }
 
   const isSuperUser = CONFIG.AUTH.SUPER_USERS.includes(email);
-  const isUcasUser = CONFIG.AUTH.REPORT_SPECIFIC.UCAS.includes(email);
 
   let menuHasItems = false;
 
@@ -35,13 +34,7 @@ function buildDynamicMenu() {
     menu.addItem('Thaw Import Data', 'triggerThaw');
     menu.addSeparator(); 
     menu.addItem('Run Progress Review', 'triggerProgressReview');
-    menu.addItem('Run End of Year', 'triggerEOY');
-    menuHasItems = true;
-  }
-
-  if (isSuperUser || isUcasUser) {
-    if (menuHasItems) menu.addSeparator(); 
-    menu.addItem('Run UCAS Starter', 'triggerUCAS');
+    menu.addItem('Run Next Steps Summary', 'triggerNextStepsSummary');
     menuHasItems = true;
   }
 
@@ -72,12 +65,8 @@ function triggerProgressReview() {
   _runReportBatch(CONFIG.REPORTS.PROGRESS_REVIEW, 'Progress Reviews');
 }
 
-function triggerEOY() {
-  _runReportBatch(CONFIG.REPORTS.EOY_MOCK, 'End of Year Assessments');
-}
-
-function triggerUCAS() {
-  _runReportBatch(CONFIG.REPORTS.UCAS, 'UCAS Application Starters');
+function triggerNextStepsSummary() {
+  _runReportBatch(CONFIG.REPORTS.NEXT_STEPS_SUMMARY, 'Next Steps Summaries');
 }
 
 /**

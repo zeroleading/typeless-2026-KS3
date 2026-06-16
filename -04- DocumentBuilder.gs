@@ -50,6 +50,17 @@ const DocumentBuilder = {
     element.replaceText('_AdNo_', student.adNo);
     element.replaceText('_Tutor_', student.tutor);
     element.replaceText('_Date_', dateStr);
+    element.replaceText('_YearGroup_', student.yearGroup || '');
+    element.replaceText('_Collection_', student.collection || '');
+    
+    // Replace Attendance Placeholders
+    if (student.attendance) {
+      element.replaceText('_AttPercent_', student.attendance.percentAtt || '-');
+      element.replaceText('_AuthAbs_', student.attendance.authAbsences || '0');
+      element.replaceText('_UnauthAbs_', student.attendance.unauthAbsences || '0');
+      element.replaceText('_Lates_', student.attendance.lates || '0');
+      element.replaceText('_PSHE_', student.attendance.pshe || '-');
+    }
   },
 
   _populateSubjectTable: function(body, subjects) {
@@ -76,14 +87,15 @@ const DocumentBuilder = {
     subjects.forEach(subject => {
       const newRow = targetTable.appendTableRow(templateRow.copy());
       newRow.replaceText('{{subjectName}}', subject.subjectName || '-');
+      newRow.replaceText('{{teacher}}', subject.teacher || '-');
       newRow.replaceText('{{tg}}', subject.tg || '-');
-      newRow.replaceText('{{eoy}}', subject.eoy || '-');
-      newRow.replaceText('{{ucas}}', subject.ucas || '-');
-      newRow.replaceText('{{rank}}', subject.rank || '-');
-      newRow.replaceText('{{ucasRef}}', subject.ucasRef || '-');
       newRow.replaceText('{{crnt}}', subject.crnt || '-');
-      newRow.replaceText('{{nextSteps}}', subject.nextSteps || '-');
-      newRow.replaceText('{{att}}', subject.att || '-');
+      newRow.replaceText('{{ci1}}', subject.ci1 || '-');
+      newRow.replaceText('{{ci2}}', subject.ci2 || '-');
+      newRow.replaceText('{{ci3}}', subject.ci3 || '-');
+      newRow.replaceText('{{ci4}}', subject.ci4 || '-');
+      newRow.replaceText('{{nextSteps1}}', subject.nextSteps1 || '-');
+      newRow.replaceText('{{nextSteps2}}', subject.nextSteps2 || '-');
     });
 
     targetTable.removeRow(templateRowIndex);

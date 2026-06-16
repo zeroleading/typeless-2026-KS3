@@ -9,61 +9,71 @@ const CONFIG = Object.freeze({
   // 1. Global Settings
   GLOBAL: {
     CONTROL_SHEET_NAME: 'control',
-    OUTPUT_FOLDER_ID: 'YOUR_MAIN_OUTPUT_FOLDER_ID', // The parent folder for all generated reports
+    OUTPUT_FOLDER_ID: 'YOUR_MAIN_OUTPUT_FOLDER_ID', 
   },
 
   // 2. Authorisation Controls
   AUTH: {
-    // Users who can run ANY report
     SUPER_USERS: [
       'jappleton@csg.school',
       'tnayagam@csg.school'
     ],
-    // Users with restricted access to specific reports
-    REPORT_SPECIFIC: {
-      UCAS: [
-        'nbayley@csg.school'
-      ]
-    }
+    REPORT_SPECIFIC: {}
   },
 
   // 3. Import Sheet Controls
-  // Configuration for the freeze/thaw data management logic
   IMPORT: {
     targetSheetName: 'import',
     backupSheetName: 'import-backup',
     anchorRowStart: 6,
-    anchorRowCount: 2, // Scans row 6 and 7
-    statusCell: 'A1'   // Cell for the visual indicator (🥶/🫠)
+    anchorRowCount: 2, 
+    statusCell: 'A1'   
   },
 
-  // 4. Setup Controls
+  // 4. Setup & Map Controls
   SCOPE: {
     subjectDetailsRange: 'scopeSubjectDetails',
     yearGroup: 'scopeYearGroup',
     keyStage: 'scopeKeyStage',
     academicYear: 'scopeAcademicYear',
     collection: 'scopeCollection',
-    targetSubjectNameRange: 'thisSubjectName'
+    targetSubjectNameRange: 'thisSubjectName',
+    
+    // New dynamic tables on the Control Panel
+    fieldMap: 'scopeFieldMap',
+    translations: 'scopeTranslations'
   },
 
-  // 5. Report Profiles
-  // Each report type has its own distinct configuration profile.
+  // 5. Fallback Field Mapper 
+  // Used only if the scopeFieldMap named range is missing or broken.
+  FALLBACK_FIELD_MAP: {
+    att_adno: 'adno',
+    att_percent: 'att %',
+    att_auth: 'auth abs',
+    att_unauth: 'unauth abs',
+    att_lates: 'lates',
+    att_pshe: 'pshe engagement',
+    subj_adno: 'adno',
+    subj_teacher: 'teacher',
+    subj_tg: 'tg',
+    subj_crnt: 'crnt',
+    subj_ci1: 'ci1',
+    subj_ci2: 'ci2',
+    subj_ci3: 'ci3',
+    subj_ci4: 'ci4',
+    subj_ns1: '≣ nextsteps1',
+    subj_ns2: '≣ nextsteps2'
+  },
+
+  // 6. Report Profiles
   REPORTS: {
-    
     PROGRESS_REVIEW: {
       name: 'Progress Review',
       templateId: 'YOUR_PR_TEMPLATE_ID'
     },
-
-    EOY_MOCK: {
-      name: 'End of Year Assessment',
-      templateId: 'YOUR_EOY_TEMPLATE_ID'
-    },
-
-    UCAS: {
-      name: 'UCAS Application',
-      templateId: 'YOUR_UCAS_TEMPLATE_ID'
+    NEXT_STEPS_SUMMARY: {
+      name: 'Next Steps Summary',
+      templateId: 'YOUR_NEXT_STEPS_TEMPLATE_ID'
     }
   }
 });
