@@ -3,17 +3,10 @@
  * Handles the user interface, custom menus, and authorisation routing.
  */
 
-/**
- * Triggered automatically when the spreadsheet is opened.
- * @param {Object} e The event object.
- */
 function onOpen(e) {
   buildDynamicMenu();
 }
 
-/**
- * Builds the custom menu based on the active user's permissions defined in Config.gs.
- */
 function buildDynamicMenu() {
   const ui = SpreadsheetApp.getUi();
   const email = Session.getActiveUser().getEmail();
@@ -25,7 +18,6 @@ function buildDynamicMenu() {
   }
 
   const isSuperUser = CONFIG.AUTH.SUPER_USERS.includes(email);
-
   let menuHasItems = false;
 
   if (isSuperUser) {
@@ -47,27 +39,11 @@ function authoriseScript() {
   SpreadsheetApp.getUi().alert('Authorisation complete. Please refresh the page to see your custom menu.');
 }
 
-// --- Trigger Functions ---
-
-function triggerSetup() {
-  Setup.triggerCreateSubjectSheets();
-}
-
-function triggerFreeze() {
-  Setup.freezeImportSheet();
-}
-
-function triggerThaw() {
-  Setup.thawImportSheet();
-}
-
-function triggerProgressReview() {
-  _runReportBatch(CONFIG.REPORTS.PROGRESS_REVIEW, 'Progress Reviews');
-}
-
-function triggerNextStepsSummary() {
-  _runReportBatch(CONFIG.REPORTS.NEXT_STEPS_SUMMARY, 'Next Steps Summaries');
-}
+function triggerSetup() { Setup.triggerCreateSubjectSheets(); }
+function triggerFreeze() { Setup.freezeImportSheet(); }
+function triggerThaw() { Setup.thawImportSheet(); }
+function triggerProgressReview() { _runReportBatch(CONFIG.REPORTS.PROGRESS_REVIEW, 'Progress Reviews'); }
+function triggerNextStepsSummary() { _runReportBatch(CONFIG.REPORTS.NEXT_STEPS_SUMMARY, 'Next Steps Summaries'); }
 
 /**
  * Shared execution logic for all report types.
@@ -77,50 +53,25 @@ function _runReportBatch(reportConfig, reportFriendlyName) {
   const ui = SpreadsheetApp.getUi();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
 
-  // Pre-run validation: Check if the import sheet is safely frozen
-  // The Why: We do not want to generate reports from data that is actively shifting/recalculating.
   const importSheet = ss.getSheetByName('import'); 
   if (importSheet) {
     const status = importSheet.getRange('A1').getValue();
     if (status !== '🥶') {
-      ui.alert(
-        'Validation Error', 
-        'The import sheet must be frozen (🥶) before generating reports. Please use the menu: Typeless Reports > Freeze Import Data.', 
-        ui.ButtonSet.OK
-      );
+      ui.alert('Validation Error', 'The import sheet must be frozen (🥶) before generating reports. Please use the menu: Typeless Reports > Freeze Import Data.', ui.ButtonSet.OK);
       return;
     }
   }
 
-  // 1. Prompt for test batch size instead of simple YES/NO confirmation
-  const batchPrompt = ui.prompt(
-    'Confirm Generation',
-    `Generate ${reportFriendlyName}?\n\nEnter a number to run a small test batch, or leave blank to run ALL students:`,
-    ui.ButtonSet.OK_CANCEL
-  );
+  // Include the batching prompt we created earlier
+  const batchPrompt = ui.prompt('Batch Run', `Generate ${reportFriendlyName}?\n\nEnter a number to run a test batch, or leave blank to run the whole cohort:`, ui.ButtonSet.OK_CANCEL);
   
-  // Abort if the user clicked Cancel or the X button
   if (batchPrompt.getSelectedButton() !== ui.Button.OK) {
-    ss.toast('Report generation cancelled.', 'Typeless');
-    return;
-  }
-  
-  // Parse the user's input
-  const batchResponseText = batchPrompt.getResponseText().trim();
-  let batchLimit = null;
-
-  if (batchResponseText !== '') {
-    batchLimit = parseInt(batchResponseText, 10);
-    // The Why: Protect against users typing "five" instead of "5", or entering negative numbers
-    if (isNaN(batchLimit) || batchLimit <= 0) {
-      ui.alert('Error', 'Please enter a valid number greater than 0, or leave the box blank to run all.', ui.ButtonSet.OK);
-      return;
-    }
+    return; // User cancelled
   }
 
-  ss.toast(`Gathering data for ${reportFriendlyName}...`, 'Typeless');
+  ss.toast(`Gathering and auditing data for ${reportFriendlyName}...`, 'Typeless');
   
-  // 2. Build the full data payload
+  // 1. Build Payload
   let payload = DataService.buildStudentDataPayload(reportConfig);
   
   if (payload.length === 0) {
@@ -128,16 +79,36 @@ function _runReportBatch(reportConfig, reportFriendlyName) {
     return;
   }
 
-  // 3. Apply the batch limit if the user entered a valid number
-  if (batchLimit && batchLimit < payload.length) {
-    payload = payload.slice(0, batchLimit);
+  // 2. Slice payload if it's a test batch
+  const batchInput = batchPrompt.getResponseText().trim();
+  if (batchInput !== '' && !isNaN(batchInput)) {
+    const limit = parseInt(batchInput, 10);
+    if (limit > 0) payload = payload.slice(0, limit);
   }
 
-  ss.toast(`Generating documents for ${payload.length} students...`, 'Typeless');
-  
+  // --- 3. PRE-FLIGHT AUDIT CHECK ---
+  const studentsWithIssues = payload.filter(s => s.auditIssues && s.auditIssues.length > 0);
+
+  if (studentsWithIssues.length > 0) {
+    let issueText = `Missing data detected for ${studentsWithIssues.length} student(s) in this run.\n\nAffected Students:\n`;
+    
+    // Loop through ALL affected students without a display limit
+    studentsWithIssues.forEach(stu => {
+       issueText += `• ${stu.name}: ${stu.auditIssues.join(' | ')}\n`;
+    });
+    
+    issueText += `\nDo you want to generate the reports with missing data anyway?`;
+
+    const proceed = ui.alert('Pre-Flight Data Warning', issueText, ui.ButtonSet.YES_NO);
+    if (proceed !== ui.Button.YES) {
+       ss.toast('Generation cancelled by user.', 'Typeless');
+       return;
+    }
+  }
+
   // 4. Generate the documents
+  ss.toast(`Generating documents for ${payload.length} students...`, 'Typeless');
   const folderId = DocumentBuilder.generateBatch(reportConfig, payload);
   
-  // 5. Alert completion
   ui.alert('Merge Complete', `Documents generated successfully.\nFolder ID: ${folderId}`, ui.ButtonSet.OK);
 }

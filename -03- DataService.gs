@@ -42,12 +42,8 @@ const DataService = {
     }));
   },
 
-  /**
-   * Helper: Ingests the 2-column Field Mapper from the Control Panel.
-   * @private
-   */
   _getDynamicFieldMap: function(ss) {
-    const map = { ...CONFIG.FALLBACK_FIELD_MAP }; // Start with fallbacks
+    const map = { ...CONFIG.FALLBACK_FIELD_MAP }; 
     const range = ss.getRangeByName(CONFIG.SCOPE.fieldMap);
     if (!range) return map;
 
@@ -55,7 +51,6 @@ const DataService = {
     data.forEach(row => {
       const internalRef = String(row[0]).trim();
       const targetHeader = String(row[1]).trim();
-      // Skip empty rows or visual headers
       if (internalRef && targetHeader && !internalRef.includes('**')) {
         map[internalRef] = targetHeader;
       }
@@ -63,11 +58,6 @@ const DataService = {
     return map;
   },
 
-  /**
-   * Helper: Ingests the 3-column Translation table into a nested object.
-   * Example output: { 'CRNT': { 'F': 'Foundation', 'E': 'Excelling' } }
-   * @private
-   */
   _getTranslationsDictionary: function(ss) {
     const dict = {};
     const range = ss.getRangeByName(CONFIG.SCOPE.translations);
@@ -87,16 +77,9 @@ const DataService = {
     return dict;
   },
 
-  /**
-   * Helper: Translates a raw code using the correct category dictionary.
-   * @private
-   */
   _translate: function(rawValue, category, translationsDict) {
     if (rawValue === '' || rawValue === undefined) return '';
     const safeValue = String(rawValue).trim().toUpperCase();
-    
-    // If the category exists and our code is in it, return the translation.
-    // Otherwise, return the raw value (acts as a visual error check for typos on the sheet).
     if (translationsDict[category] && translationsDict[category][safeValue]) {
       return translationsDict[category][safeValue];
     }
@@ -111,12 +94,11 @@ const DataService = {
     const data = range.getValues();
     data.forEach(row => {
       const fullName = row[0];
-      const rawAdNo = row[2]; // Updated column index based on diagnostics
-      const reg = row[3];     // Adjust these indices if necessary to match your actual sheet
-      const tutor = row[5];   // Adjust these indices if necessary to match your actual sheet
+      const rawAdNo = row[2]; 
+      const reg = row[3];     
+      const tutor = row[5];   
       
       if (rawAdNo && String(rawAdNo).toLowerCase() !== 'adno') { 
-        // Use stripped, unpadded admission numbers for flawless internal matching
         const adNo = String(rawAdNo).trim();
         studentMap[adNo] = {
           adNo: adNo,
@@ -124,7 +106,8 @@ const DataService = {
           reg: reg,
           tutor: tutor,
           tutorInfo: {}, 
-          subjects: [] 
+          subjects: [],
+          auditIssues: [] // <-- NEW: Array to hold our missing data warnings
         };
       }
     });
@@ -157,7 +140,6 @@ const DataService = {
 
       const adNo = String(rawAdNo).trim();
       if (studentMap[adNo]) {
-        // Grab raw PSHE value and explicitly translate it using the 'PSHE' dictionary category
         const rawPshe = psheIdx > -1 ? row[psheIdx] : '';
         const translatedPshe = this._translate(rawPshe, 'PSHE', translations);
 
@@ -176,7 +158,6 @@ const DataService = {
   _processSubjectSheet: function(ss, sheet, studentMap, fieldMap, translations) {
     const sheetName = sheet.getName();
     
-    // Attempt to grab the full subject name from the named range, fallback to sheet code if missing
     const nameRangeStr = `${sheetName}!${CONFIG.SCOPE.targetSubjectNameRange}`;
     const nameRange = ss.getRangeByName(nameRangeStr);
     const fullSubjectName = nameRange ? String(nameRange.getValue()).trim() : sheetName;
@@ -190,7 +171,6 @@ const DataService = {
 
     const headers = data[0].map(h => String(h).toLowerCase().trim());
     
-    // Explicitly map indices using the fieldMap internal references
     const adNoColIdx = headers.indexOf((fieldMap['subj_adno'] || '').toLowerCase());
     const teacherIdx = headers.indexOf((fieldMap['subj_teacher'] || '').toLowerCase());
     const tgIdx = headers.indexOf((fieldMap['subj_tg'] || '').toLowerCase());
@@ -213,7 +193,6 @@ const DataService = {
 
       if (studentMap[adNo]) {
         
-        // 1. Grab raw values that need translation
         const rawTg = tgIdx > -1 ? row[tgIdx] : '';
         const rawCrnt = crntIdx > -1 ? row[crntIdx] : '';
         const rawCi1 = ci1Idx > -1 ? row[ci1Idx] : '';
@@ -221,9 +200,21 @@ const DataService = {
         const rawCi3 = ci3Idx > -1 ? row[ci3Idx] : '';
         const rawCi4 = ci4Idx > -1 ? row[ci4Idx] : '';
 
-        // 2. Explicitly build the subject profile and translate specific fields
+        // --- NEW: AUDIT CHECK ---
+        let missingElements = [];
+        if (rawCrnt === '') missingElements.push('CRNT');
+        if (rawCi1 === '') missingElements.push('CI1');
+        if (rawCi2 === '') missingElements.push('CI2');
+        if (rawCi3 === '') missingElements.push('CI3');
+        if (rawCi4 === '') missingElements.push('CI4');
+
+        if (missingElements.length > 0) {
+          studentMap[adNo].auditIssues.push(`${fullSubjectName} (${missingElements.join(', ')})`);
+        }
+        // ------------------------
+
         const subjectData = {
-          subjectName: fullSubjectName, // Now passing the full descriptive name
+          subjectName: fullSubjectName, 
           teacher: teacherIdx > -1 ? row[teacherIdx] : '',
           tg: this._translate(rawTg, 'CRNT', translations), 
           crnt: this._translate(rawCrnt, 'CRNT', translations), 
@@ -239,5 +230,4 @@ const DataService = {
       }
     }
   }
-
 };
