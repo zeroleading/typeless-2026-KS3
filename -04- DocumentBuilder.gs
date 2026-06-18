@@ -40,7 +40,7 @@ const DocumentBuilder = {
   },
 
   _buildSingleDocument: function(student, templateFile, destinationFolder, reportName) {
-    const paddedAdNo = String(student.adNo).padStart(5, '0');
+    const paddedAdNo = String(student.adNo).padStart(6, '0');
     
     // Format: [reg] [name] [paddedAdno] [shortName]
     let fileName = `${student.reg} ${student.name} ${paddedAdNo} ${student.shortName || ''}`.trim();
