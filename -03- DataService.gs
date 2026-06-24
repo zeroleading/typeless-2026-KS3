@@ -13,6 +13,7 @@ const DataService = {
     const collection = ss.getRangeByName(CONFIG.SCOPE.collection)?.getValue() || '';
     const academicYear = ss.getRangeByName(CONFIG.SCOPE.academicYear)?.getValue() || '';
     const shortName = ss.getRangeByName(CONFIG.SCOPE.shortName)?.getValue() || '';
+    const until = ss.getRangeByName(CONFIG.SCOPE.until)?.getValue() || '';
 
     // 2. Fetch Control Panel Maps & Dictionaries
     const fieldMap = this._getDynamicFieldMap(ss);
@@ -38,7 +39,8 @@ const DataService = {
       yearGroup: yearGroup,
       collection: collection,
       academicYear: academicYear,
-      shortName: shortName
+      shortName: shortName,
+      until: until
     }));
   },
 
