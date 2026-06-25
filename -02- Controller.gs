@@ -42,73 +42,99 @@ function authoriseScript() {
 function triggerSetup() { Setup.triggerCreateSubjectSheets(); }
 function triggerFreeze() { Setup.freezeImportSheet(); }
 function triggerThaw() { Setup.thawImportSheet(); }
-function triggerProgressReview() { _runReportBatch(CONFIG.REPORTS.PROGRESS_REVIEW, 'Progress Reviews'); }
-function triggerNextStepsSummary() { _runReportBatch(CONFIG.REPORTS.NEXT_STEPS_SUMMARY, 'Next Steps Summaries'); }
+
+// --- REPORT TRIGGERS ---
+function triggerProgressReview() { showBatchModal('PROGRESS_REVIEW', 'Progress Reviews'); }
+function triggerNextStepsSummary() { showBatchModal('NEXT_STEPS_SUMMARY', 'Next Steps Summaries'); }
 
 /**
- * Shared execution logic for all report types.
- * @private
+ * Opens the new Chunking Modal for heavy report generation.
+ * @param {string} configKey The key in CONFIG.REPORTS to use.
+ * @param {string} friendlyName The display name for the UI.
  */
-function _runReportBatch(reportConfig, reportFriendlyName) {
-  const ui = SpreadsheetApp.getUi();
+function showBatchModal(configKey, friendlyName) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-
   const importSheet = ss.getSheetByName('import'); 
+  
   if (importSheet) {
     const status = importSheet.getRange('A1').getValue();
     if (status !== '🥶') {
-      ui.alert('Validation Error', 'The import sheet must be frozen (🥶) before generating reports. Please use the menu: Typeless Reports > Freeze Import Data.', ui.ButtonSet.OK);
+      SpreadsheetApp.getUi().alert('Validation Error', 'The import sheet must be frozen (🥶) before generating reports. Please use the menu: Typeless Reports > Freeze Import Data.', SpreadsheetApp.getUi().ButtonSet.OK);
       return;
     }
   }
 
-  // Include the batching prompt we created earlier
-  const batchPrompt = ui.prompt('Batch Run', `Generate ${reportFriendlyName}?\n\nEnter a number to run a test batch, or leave blank to run the whole cohort:`, ui.ButtonSet.OK_CANCEL);
+  // Use HtmlTemplate to pass variables to the HTML file
+  const template = HtmlService.createTemplateFromFile('09- BatchGeneration');
+  template.configKey = configKey;
+  template.friendlyName = friendlyName;
   
-  if (batchPrompt.getSelectedButton() !== ui.Button.OK) {
-    return; // User cancelled
-  }
+  const html = template.evaluate()
+      .setWidth(450)
+      .setHeight(380)
+      .setTitle('Batch Generator');
+      
+  SpreadsheetApp.getUi().showModalDialog(html, 'Report Engine');
+}
 
-  ss.toast(`Gathering and auditing data for ${reportFriendlyName}...`, 'Typeless');
-  
-  // 1. Build Payload
-  let payload = DataService.buildStudentDataPayload(reportConfig);
-  
-  if (payload.length === 0) {
-    ui.alert('Error', 'No student data found. Please check the master list and subject sheets.', ui.ButtonSet.OK);
-    return;
-  }
+/**
+ * Called by the Modal (Step 1): Prepares the folder and audits the data.
+ * @param {string} configKey The report configuration key.
+ * @param {boolean} forceProceed Whether to bypass audit warnings.
+ * @returns {Object} Status payload containing issues or folder details.
+ */
+function server_initBatch(configKey, forceProceed) {
+  const reportConfig = CONFIG.REPORTS[configKey];
+  const payload = DataService.buildStudentDataPayload(reportConfig);
 
-  // 2. Slice payload if it's a test batch
-  const batchInput = batchPrompt.getResponseText().trim();
-  if (batchInput !== '' && !isNaN(batchInput)) {
-    const limit = parseInt(batchInput, 10);
-    if (limit > 0) payload = payload.slice(0, limit);
-  }
+  if (payload.length === 0) return { error: "No student data found." };
 
-  // --- 3. PRE-FLIGHT AUDIT CHECK ---
-  const studentsWithIssues = payload.filter(s => s.auditIssues && s.auditIssues.length > 0);
-
-  if (studentsWithIssues.length > 0) {
-    let issueText = `Missing data detected for ${studentsWithIssues.length} student(s) in this run.\n\nAffected Students:\n`;
-    
-    // Loop through ALL affected students without a display limit
-    studentsWithIssues.forEach(stu => {
-       issueText += `• ${stu.name}: ${stu.auditIssues.join(' | ')}\n`;
-    });
-    
-    issueText += `\nDo you want to generate the reports with missing data anyway?`;
-
-    const proceed = ui.alert('Pre-Flight Data Warning', issueText, ui.ButtonSet.YES_NO);
-    if (proceed !== ui.Button.YES) {
-       ss.toast('Generation cancelled by user.', 'Typeless');
-       return;
+  // 1. Audit Check
+  if (!forceProceed) {
+    const studentsWithIssues = payload.filter(s => s.auditIssues && s.auditIssues.length > 0);
+    if (studentsWithIssues.length > 0) {
+      const issuesList = studentsWithIssues.map(s => `<b>${s.name}</b>: ${s.auditIssues.join(' | ')}`);
+      return {
+        status: 'audit_warning',
+        issues: issuesList,
+        totalStudents: payload.length
+      };
     }
   }
 
-  // 4. Generate the documents
-  ss.toast(`Generating documents for ${payload.length} students...`, 'Typeless');
-  const folderId = DocumentBuilder.generateBatch(reportConfig, payload);
+  // 2. Folder Creation
+  const folderId = DocumentBuilder.createBatchFolder(reportConfig, payload[0]);
   
-  ui.alert('Merge Complete', `Documents generated successfully.\nFolder ID: ${folderId}`, ui.ButtonSet.OK);
+  return {
+    status: 'ready',
+    folderId: folderId,
+    folderUrl: `https://drive.google.com/drive/folders/${folderId}`,
+    totalStudents: payload.length
+  };
+}
+
+/**
+ * Called by the Modal (Step 3 Loop): Processes a specific chunk of students.
+ * @param {string} configKey The report configuration key.
+ * @param {string} folderId The Google Drive folder ID to save to.
+ * @param {number} startIndex Where to begin slicing the array.
+ * @param {number} chunkSize How many students to process in this run.
+ * @returns {Object} Success flag.
+ */
+function server_processChunk(configKey, folderId, startIndex, chunkSize) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const reportConfig = CONFIG.REPORTS[configKey];
+  
+  // Re-build payload dynamically (fast and keeps memory lean)
+  const payload = DataService.buildStudentDataPayload(reportConfig);
+  
+  // Slice out just the 10 students requested
+  const chunk = payload.slice(startIndex, startIndex + chunkSize);
+
+  ss.toast(`Merging chunk: ${startIndex + 1} to ${startIndex + chunk.length}...`, 'Background Engine');
+  
+  // Send to builder
+  DocumentBuilder.generateChunk(reportConfig, chunk, folderId);
+  
+  return { success: true };
 }

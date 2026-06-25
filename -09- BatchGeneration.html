@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+      body { 
+        font-family: "Source Sans 3", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
+        padding: 20px; 
+        color: #2d3748; 
+        background-color: #fdfdfd;
+        margin: 0;
+      }
+      h2 {
+        margin-top: 0;
+        font-size: 1.2em;
+        color: #0081af;
+        border-bottom: 2px solid #edf2f7;
+        padding-bottom: 10px;
+      }
+      p {
+        font-size: 0.95em;
+        line-height: 1.5;
+        color: #4a5568;
+      }
+      .btn {
+        width: 100%;
+        padding: 12px;
+        margin-top: 15px;
+        cursor: pointer;
+        background-color: #0081af;
+        color: #ffffff;
+        border: none;
+        border-radius: 8px;
+        font-size: 1em;
+        font-weight: 600;
+        transition: background-color 0.2s;
+      }
+      .btn:hover { background-color: #006b91; }
+      .btn:disabled { background-color: #a0aec0; cursor: not-allowed; }
+      .btn-danger { background-color: #e53e3e; }
+      .btn-danger:hover { background-color: #c53030; }
+      .btn-danger:disabled { background-color: #fc8181; }
+      
+      /* Progress Bar Styling */
+      .progress-container {
+        width: 100%;
+        background-color: #edf2f7;
+        border-radius: 8px;
+        margin: 20px 0 10px 0;
+        height: 24px;
+        overflow: hidden;
+        position: relative;
+      }
+      .progress-fill {
+        height: 100%;
+        background-color: #48bb78;
+        width: 0%;
+        transition: width 0.4s ease;
+      }
+      .progress-text {
+        text-align: center;
+        font-size: 0.85em;
+        font-weight: 600;
+        color: #718096;
+      }
+      
+      /* Audit Warning Styling */
+      .audit-box {
+        max-height: 150px;
+        overflow-y: auto;
+        background: #fff5f5;
+        border: 1px solid #fc8181;
+        border-radius: 8px;
+        padding: 10px;
+        margin-top: 10px;
+        font-size: 0.85em;
+        color: #c53030;
+      }
+      
+      .status-msg {
+        color: #718096;
+        font-size: 0.9em;
+        margin-top: 12px;
+        text-align: center;
+        min-height: 20px;
+      }
+      
+      .success-box {
+        text-align: center;
+        padding: 20px 0;
+      }
+      .success-box a {
+        display: inline-block;
+        margin-top: 15px;
+        padding: 10px 20px;
+        background-color: #edf2f7;
+        color: #0081af;
+        text-decoration: none;
+        border-radius: 8px;
+        font-weight: 600;
+      }
+      .success-box a:hover { background-color: #e2e8f0; }
+
+      /* --- NEW SPINNER ANIMATION --- */
+      .spinner {
+        display: inline-block;
+        width: 14px;
+        height: 14px;
+        border: 2px solid rgba(0, 129, 175, 0.2);
+        border-radius: 50%;
+        border-top-color: #0081af;
+        animation: spin 0.8s linear infinite;
+        vertical-align: middle;
+        margin-right: 8px;
+      }
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
+      .processing-text {
+        display: inline-flex;
+        align-items: center;
+        color: #0081af;
+        font-weight: 600;
+      }
+    </style>
+  </head>
+  <body>
+    <h2><?= friendlyName ?></h2>
+    
+    <div id="step-start">
+      <p>Click below to begin the generation process. The system will first audit the data for any missing entries.</p>
+      <button class="btn" id="startBtn" onclick="initBatch(false)">Start Pre-Flight Audit</button>
+      <div id="startStatus" class="status-msg"></div>
+    </div>
+    
+    <div id="step-audit" style="display: none;">
+      <p><strong>⚠️ Missing Data Detected</strong><br>The following students are missing data required for this report. Generating now will leave these fields blank.</p>
+      <div class="audit-box" id="auditList"></div>
+      <button class="btn btn-danger" id="forceBtn" onclick="initBatch(true)">Ignore Warnings & Generate Anyway</button>
+      <div id="auditStatus" class="status-msg"></div>
+    </div>
+    
+    <div id="step-progress" style="display: none;">
+      <p>Generating documents in batches to prevent timeouts. Please leave this window open until complete.</p>
+      <div class="progress-container">
+        <div class="progress-fill" id="pBar"></div>
+      </div>
+      <div class="progress-text" id="pText">0 / 0 Students</div>
+      <div id="runStatus" class="status-msg">
+        <span class="processing-text"><div class="spinner"></div> Initialising engine...</span>
+      </div>
+    </div>
+    
+    <div id="step-complete" style="display: none;" class="success-box">
+      <h3 style="color: #48bb78; margin-bottom: 5px;">Generation Complete!</h3>
+      <p>All documents have been successfully merged.</p>
+      <a id="folderLink" href="#" target="_blank">View Generated Folder &rarr;</a>
+    </div>
+
+    <script>
+      const configKey = "<?= configKey ?>";
+      const chunkSize = 10; 
+      
+      let batchFolderId = '';
+      let totalStudents = 0;
+      let currentIndex = 0;
+
+      function switchView(stepId) {
+        document.getElementById('step-start').style.display = 'none';
+        document.getElementById('step-audit').style.display = 'none';
+        document.getElementById('step-progress').style.display = 'none';
+        document.getElementById('step-complete').style.display = 'none';
+        document.getElementById(stepId).style.display = 'block';
+      }
+
+      function initBatch(forceProceed) {
+        // Disable buttons and show loading spinner
+        if (forceProceed) {
+          document.getElementById('forceBtn').disabled = true;
+          document.getElementById('auditStatus').innerHTML = '<span class="processing-text"><div class="spinner"></div> Preparing batch folder...</span>';
+        } else {
+          document.getElementById('startBtn').disabled = true;
+          document.getElementById('startStatus').innerHTML = '<span class="processing-text"><div class="spinner"></div> Auditing data...</span>';
+        }
+        
+        google.script.run
+          .withSuccessHandler(function(response) {
+            if (response.error) {
+              document.getElementById('startStatus').innerHTML = '<span style="color:#e53e3e;">' + response.error + '</span>';
+              document.getElementById('startBtn').disabled = false;
+              return;
+            }
+            
+            if (response.status === 'audit_warning') {
+              let html = '<ul>';
+              response.issues.forEach(i => html += '<li>' + i + '</li>');
+              html += '</ul>';
+              document.getElementById('auditList').innerHTML = html;
+              document.getElementById('startStatus').innerHTML = ''; // Clear start text
+              switchView('step-audit');
+            } else if (response.status === 'ready') {
+              batchFolderId = response.folderId;
+              totalStudents = response.totalStudents;
+              document.getElementById('folderLink').href = response.folderUrl;
+              
+              switchView('step-progress');
+              processNextChunk();
+            }
+          })
+          .withFailureHandler(function(err) {
+            const errHtml = '<span style="color:#e53e3e;">System Error: ' + err.message + '</span>';
+            if (forceProceed) {
+              document.getElementById('auditStatus').innerHTML = errHtml;
+              document.getElementById('forceBtn').disabled = false;
+            } else {
+              document.getElementById('startStatus').innerHTML = errHtml;
+              document.getElementById('startBtn').disabled = false;
+            }
+          })
+          .server_initBatch(configKey, forceProceed);
+      }
+
+      function processNextChunk() {
+        if (currentIndex >= totalStudents) {
+          switchView('step-complete');
+          return;
+        }
+
+        const endNum = Math.min(currentIndex + chunkSize, totalStudents);
+        
+        // Update status text with spinner for the current chunk
+        document.getElementById('runStatus').innerHTML = 
+          '<span class="processing-text"><div class="spinner"></div> Merging documents ' + 
+          (currentIndex + 1) + ' to ' + endNum + '...</span>';
+        
+        google.script.run
+          .withSuccessHandler(function() {
+            currentIndex += chunkSize;
+            
+            // Update Progress Bar
+            const percent = Math.min(Math.round((currentIndex / totalStudents) * 100), 100);
+            document.getElementById('pBar').style.width = percent + '%';
+            document.getElementById('pText').innerText = Math.min(currentIndex, totalStudents) + ' / ' + totalStudents + ' Students';
+            
+            // Trigger next loop
+            processNextChunk();
+          })
+          .withFailureHandler(function(err) {
+            document.getElementById('runStatus').innerHTML = '<span style="color:#e53e3e;">Failed at index ' + currentIndex + ': ' + err.message + '<br>Please close and try again.</span>';
+          })
+          .server_processChunk(configKey, batchFolderId, currentIndex, chunkSize);
+      }
+    </script>
+  </body>
+</html>

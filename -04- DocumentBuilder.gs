@@ -5,17 +5,22 @@
 
 const DocumentBuilder = {
 
-  generateBatch: function(reportConfig, studentPayload) {
-    const ss = SpreadsheetApp.getActiveSpreadsheet(); // Grab active sheet for progress toasts
-    const templateFile = DriveApp.getFileById(reportConfig.templateId);
+  // --- NEW CHUNKING ENGINE METHODS ---
+
+  /**
+   * Creates the destination folder in Google Drive.
+   * @param {Object} reportConfig The configuration for the current report.
+   * @param {Object} sampleStudent A single student record to extract global data from.
+   * @returns {string} The ID of the newly created folder.
+   */
+  createBatchFolder: function(reportConfig, sampleStudent) {
     const outputFolder = DriveApp.getFolderById(CONFIG.GLOBAL.OUTPUT_FOLDER_ID);
-    
     const dateStr = Utilities.formatDate(new Date(), "Europe/London", "yyyy-MM-dd");
     
-    // Extract globals from the first student payload for folder naming
-    const academicYear = studentPayload[0]?.academicYear || '';
-    const collection = studentPayload[0]?.collection || '';
-    const yearGroup = studentPayload[0]?.yearGroup || '';
+    // Extract globals from the sample student for folder naming
+    const academicYear = sampleStudent?.academicYear || '';
+    const collection = sampleStudent?.collection || '';
+    const yearGroup = sampleStudent?.yearGroup || '';
     
     // Format: [academicYear] [collection] [yearGroup] [datestamp]
     let folderName = `${academicYear} ${collection} ${yearGroup} ${dateStr}`.trim();
@@ -24,19 +29,24 @@ const DocumentBuilder = {
     }
     
     const batchFolder = outputFolder.createFolder(folderName);
-    const totalStudents = studentPayload.length;
+    return batchFolder.getId();
+  },
 
-    studentPayload.forEach((student, index) => {
+  /**
+   * Generates a single chunk of documents.
+   * @param {Object} reportConfig The configuration for the current report.
+   * @param {Array} chunkPayload The subset of students to process.
+   * @param {string} folderId The ID of the destination folder.
+   */
+  generateChunk: function(reportConfig, chunkPayload, folderId) {
+    const templateFile = DriveApp.getFileById(reportConfig.templateId);
+    const batchFolder = DriveApp.getFolderById(folderId);
+    
+    chunkPayload.forEach((student) => {
       if (student.subjects && student.subjects.length > 0) {
-        
-        // Live Progress Indicator
-        ss.toast(`Merging document ${index + 1} of ${totalStudents}...\n(${student.name})`, 'Progress Tracker', 10);
-        
         this._buildSingleDocument(student, templateFile, batchFolder, reportConfig.name);
       }
     });
-
-    return batchFolder.getId(); 
   },
 
   _buildSingleDocument: function(student, templateFile, destinationFolder, reportName) {
