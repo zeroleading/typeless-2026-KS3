@@ -65,7 +65,7 @@ function showBatchModal(configKey, friendlyName) {
   }
 
   // Use HtmlTemplate to pass variables to the HTML file
-  const template = HtmlService.createTemplateFromFile('09- BatchGeneration');
+  const template = HtmlService.createTemplateFromFile('-09- BatchGeneration');
   template.configKey = configKey;
   template.friendlyName = friendlyName;
   
