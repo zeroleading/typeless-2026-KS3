@@ -1,6 +1,8 @@
 /**
- * DocumentBuilder.gs
- * Handles the generation of Google Docs from templates using a high-speed hybrid approach.
+ * DocumentBuilder.gs [KS3]
+ * High-speed hybrid document generation engine utilising DocumentApp for row cloning
+ * and the Google Docs Advanced API for global token replacement.
+ * British English conventions are maintained across all internal commentary.
  */
 
 const DocumentBuilder = {
@@ -8,55 +10,61 @@ const DocumentBuilder = {
   // --- CHUNKING ENGINE METHODS ---
 
   /**
-   * Creates the destination folder in Google Drive.
+   * Creates the destination folder in Google Drive with exponential backoff.
    * @param {Object} reportConfig The configuration for the current report.
-   * @param {Object} sampleStudent A single student record to extract global data from.
+   * @param {Object} sampleStudent A single student record to extract global folder data from.
    * @returns {string} The ID of the newly created folder.
    */
   createBatchFolder: function(reportConfig, sampleStudent) {
-    let outputFolder, batchFolder;
+    let outputFolder;
+    let batchFolder;
+    
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
         outputFolder = DriveApp.getFolderById(CONFIG.GLOBAL.OUTPUT_FOLDER_ID);
-        const dateStr = Utilities.formatDate(new Date(), "Europe/London", "yyyy-MM-dd");
+        const dateStr = Utilities.formatDate(new Date(), 'Europe/London', 'yyyy-MM-dd');
         
-        // Extract globals from the sample student for folder naming
+        // Extract metadata for standardised folder naming
         const academicYear = sampleStudent?.academicYear || '';
         const collection = sampleStudent?.collection || '';
         const yearGroup = sampleStudent?.yearGroup || '';
         
-        // Format: [academicYear] [collection] [yearGroup] [datestamp]
-        let folderName = (academicYear + " " + collection + " " + yearGroup + " " + dateStr).trim();
+        let folderName = `${academicYear} ${collection} ${yearGroup} ${dateStr}`.trim();
         if (reportConfig.name === CONFIG.REPORTS.NEXT_STEPS_SUMMARY.name) {
-          folderName += " next-steps";
+          folderName += ' next-steps';
         }
         
         batchFolder = outputFolder.createFolder(folderName);
         return batchFolder.getId();
       } catch (e) {
-        if (attempt === 3) throw e;
+        if (attempt === 3) {
+          throw new Error(`[Folder Creation Error]: Unable to create batch destination folder: ${e.message}`);
+        }
         Utilities.sleep(1000 * attempt);
       }
     }
   },
 
   /**
-   * Generates a single chunk of documents.
+   * Generates a single chunk of documents from the pre-sliced payload.
    * @param {Object} reportConfig The configuration for the current report.
-   * @param {Array} chunkPayload The subset of students to process.
+   * @param {Array<Object>} chunkPayload The subset of students to process.
    * @param {string} folderId The ID of the destination folder.
    */
   generateChunk: function(reportConfig, chunkPayload, folderId) {
     let templateFile = null;
     let batchFolder = null;
     
+    // Acquire Drive resources once per chunk with retry protection
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
         templateFile = DriveApp.getFileById(reportConfig.templateId);
         batchFolder = DriveApp.getFolderById(folderId);
         break;
       } catch (e) {
-        if (attempt === 3) throw e;
+        if (attempt === 3) {
+          throw new Error(`[Drive Acquisition Error]: Could not acquire template or target folder: ${e.message}`);
+        }
         Utilities.sleep(1000 * attempt);
       }
     }
@@ -76,93 +84,91 @@ const DocumentBuilder = {
       }
     });
 
+    // If every student in this chunk failed, surface the error so the UI modal can flag it
     if (successCount === 0 && chunkPayload.length > 0 && lastError) {
       throw lastError;
     }
   },
 
   /**
-   * Core generation logic combining DocumentApp (structural) and Docs API (text replacement).
+   * Orchestrates physical copy, structural table duplication, and Docs API token substitution.
    * @private
+   * @param {Object} student The student data record.
+   * @param {GoogleAppsScript.Drive.File} templateFile The master template file object.
+   * @param {GoogleAppsScript.Drive.Folder} destinationFolder The target folder destination.
+   * @param {string} reportName The current report identifier.
    */
   _buildSingleDocument: function(student, templateFile, destinationFolder, reportName) {
-    // Defensive check to ensure adNo exists before padding
     const safeAdNo = student.adNo ? String(student.adNo) : '000000';
     const paddedAdNo = safeAdNo.padStart(6, '0');
     
-    // Format: [reg] [name] [paddedAdno] [shortName]
-    let fileName = (student.reg + " " + student.name + " " + paddedAdNo + " " + (student.shortName || '')).trim();
+    let fileName = `${student.reg} ${student.name} ${paddedAdNo} ${student.shortName || ''}`.trim();
     if (reportName === CONFIG.REPORTS.NEXT_STEPS_SUMMARY.name) {
-      fileName += " next-steps";
+      fileName += ' next-steps';
     }
 
-    let lastError = null;
-
-    // Enclose the full creation and editing pipeline in a transaction retry loop.
-    // If a storage sync error occurs during makeCopy, getBody, saveAndClose, or batchUpdate,
-    // the broken file copy is trashed and recreated cleanly.
-    for (let attempt = 1; attempt <= 5; attempt++) {
+    // Execute within a transactional retry loop to defend against storage sync blips
+    for (let attempt = 1; attempt <= 3; attempt++) {
       let newDocFile = null;
       let docId = '';
 
       try {
-        // 1. Create physical copy from template
+        // 1. Duplicate template in destination folder
         newDocFile = templateFile.makeCopy(fileName, destinationFolder);
         docId = newDocFile.getId();
         
-        // Incremental pause to allow Google Drive storage backend propagation
-        Utilities.sleep(800 * attempt);
+        // Brief pause allowing Drive metadata propagation across Google storage clusters
+        Utilities.sleep(400 * attempt);
 
-        // 2. Open document handle
+        // 2. Structural Phase: DocumentApp row cloning
         const newDoc = DocumentApp.openById(docId);
         const body = newDoc.getBody();
-
-        // 3. Phase 1: Structural Table Building (DocumentApp)
         this._populateSubjectTable(body, student.subjects);
 
-        // 4. Save and close to flush structural edits before Docs API operations
+        // Explicitly flush and close to unlock document before advanced API access
         newDoc.saveAndClose();
-        Utilities.sleep(400);
+        Utilities.sleep(250);
 
-        // 5. Phase 2: High-Speed Global Text Replacement (Docs API)
+        // 3. Text Replacement Phase: Advanced Docs API batchUpdate
         const requests = this._buildGlobalReplacementRequests(student, paddedAdNo);
         if (requests.length > 0) {
           Docs.Documents.batchUpdate({ requests: requests }, docId);
         }
 
-        // Execution succeeded
+        // Successfully created and populated
         return;
 
       } catch (e) {
-        lastError = e;
         console.warn(`Attempt ${attempt} failed for ${student.name} (${student.adNo}): ${e.message}`);
 
-        // Trash the failed document copy so un-synced locks are discarded
+        // Purge the incomplete document to keep destination folders tidy
         if (newDocFile) {
           try {
             newDocFile.setTrashed(true);
           } catch (trashErr) {
-            // Ignore cleanup errors
+            // Silently ignore cleanup errors on failed references
           }
         }
 
-        if (attempt === 5) {
-          throw new Error(`Storage sync error after 5 attempts: ${e.message}`);
+        if (attempt === 3) {
+          throw new Error(`[Document Construction Error] (${student.name}): ${e.message}`);
         }
 
-        Utilities.sleep(1000 * attempt);
+        Utilities.sleep(750 * attempt);
       }
     }
   },
 
   /**
-   * Constructs the payload required for the Google Docs API batchUpdate.
+   * Constructs the payload required for the Google Docs API batchUpdate call.
    * @private
+   * @param {Object} student The student record.
+   * @param {string} paddedAdNo The zero-padded admission number.
+   * @returns {Array<Object>} The array of replaceAllText request objects.
    */
   _buildGlobalReplacementRequests: function(student, paddedAdNo) {
-    const dateStr = Utilities.formatDate(new Date(), "Europe/London", "MMMM yyyy");
+    const dateStr = Utilities.formatDate(new Date(), 'Europe/London', 'MMMM yyyy');
     
-    // Map of all global tags to their target values
     const replacements = {
       '_Name_': student.name || '',
       '_Reg_': student.reg || '',
@@ -183,28 +189,30 @@ const DocumentBuilder = {
       replacements['_PSHE_'] = student.tutorInfo.pshe || '-';
     }
 
-    // Convert the map into the specific array structure required by the Docs API
     return Object.keys(replacements).map(tag => ({
       replaceAllText: {
         containsText: { text: tag, matchCase: true },
-        replaceText: String(replacements[tag]) // Ensure it is always cast as a string
+        replaceText: String(replacements[tag])
       }
     }));
   },
 
   /**
-   * Locates the subject template row, duplicates it, and cleans up the original.
+   * Locates the subject template row, duplicates it for each subject, and cleans up the placeholder.
+   * Tailored for Next Steps Summaries by omitting unneeded target grade evaluations.
    * @private
+   * @param {GoogleAppsScript.Document.Body} body The document body object.
+   * @param {Array<Object>} subjects The list of subject records for this student.
    */
   _populateSubjectTable: function(body, subjects) {
     const tables = body.getTables();
     if (tables.length === 0) return;
 
-    // Find the table that contains our template tags
     let targetTable = null;
     let templateRow = null;
     let templateRowIndex = -1;
 
+    // Identify the specific table containing our template tags
     for (let t = 0; t < tables.length; t++) {
       const table = tables[t];
       for (let r = 0; r < table.getNumRows(); r++) {
@@ -214,8 +222,7 @@ const DocumentBuilder = {
           templateRow = row.copy();
           templateRowIndex = r;
           
-          // Hygiene: Always remove the original template row so it doesn't linger 
-          // if the student has no subjects.
+          // Remove the placeholder row before injecting student data
           table.removeRow(r);
           break;
         }
@@ -225,15 +232,14 @@ const DocumentBuilder = {
 
     if (!targetTable || !templateRow) return;
 
-    // Add a row for each subject and replace the specific tags locally within that row object
+    // Clone and populate a row for each active subject
     if (subjects && subjects.length > 0) {
       subjects.forEach((subj, index) => {
         const newRow = templateRow.copy();
         
-        // Because these replacements are scoped to 'newRow', they execute extremely quickly
+        // Perform scoped replacements directly on the row element
         newRow.replaceText('{{subjectName}}', subj.subjectName || '');
         newRow.replaceText('{{teacher}}', subj.teacher || '');
-        newRow.replaceText('{{tg}}', subj.tg || '');
         newRow.replaceText('{{crnt}}', subj.crnt || '');
         newRow.replaceText('{{ci1}}', subj.ci1 || '');
         newRow.replaceText('{{ci2}}', subj.ci2 || '');
@@ -241,6 +247,10 @@ const DocumentBuilder = {
         newRow.replaceText('{{ci4}}', subj.ci4 || '');
         newRow.replaceText('{{nextSteps1}}', subj.nextSteps1 || '');
         newRow.replaceText('{{nextSteps2}}', subj.nextSteps2 || '');
+
+        // Safe fallback in case the template also includes legacy target tags
+        newRow.replaceText('{{tg}}', subj.tg || '');
+        newRow.replaceText('{{stg}}', subj.stg || '');
         
         targetTable.insertTableRow(templateRowIndex + index, newRow);
       });
