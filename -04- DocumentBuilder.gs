@@ -14,22 +14,30 @@ const DocumentBuilder = {
    * @returns {string} The ID of the newly created folder.
    */
   createBatchFolder: function(reportConfig, sampleStudent) {
-    const outputFolder = DriveApp.getFolderById(CONFIG.GLOBAL.OUTPUT_FOLDER_ID);
-    const dateStr = Utilities.formatDate(new Date(), "Europe/London", "yyyy-MM-dd");
-    
-    // Extract globals from the sample student for folder naming
-    const academicYear = sampleStudent?.academicYear || '';
-    const collection = sampleStudent?.collection || '';
-    const yearGroup = sampleStudent?.yearGroup || '';
-    
-    // Format: [academicYear] [collection] [yearGroup] [datestamp]
-    let folderName = `${academicYear} ${collection} ${yearGroup} ${dateStr}`.trim();
-    if (reportConfig.name === CONFIG.REPORTS.NEXT_STEPS_SUMMARY.name) {
-      folderName += " next-steps";
+    let outputFolder, batchFolder;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        outputFolder = DriveApp.getFolderById(CONFIG.GLOBAL.OUTPUT_FOLDER_ID);
+        const dateStr = Utilities.formatDate(new Date(), "Europe/London", "yyyy-MM-dd");
+        
+        // Extract globals from the sample student for folder naming
+        const academicYear = sampleStudent?.academicYear || '';
+        const collection = sampleStudent?.collection || '';
+        const yearGroup = sampleStudent?.yearGroup || '';
+        
+        // Format: [academicYear] [collection] [yearGroup] [datestamp]
+        let folderName = (academicYear + " " + collection + " " + yearGroup + " " + dateStr).trim();
+        if (reportConfig.name === CONFIG.REPORTS.NEXT_STEPS_SUMMARY.name) {
+          folderName += " next-steps";
+        }
+        
+        batchFolder = outputFolder.createFolder(folderName);
+        return batchFolder.getId();
+      } catch (e) {
+        if (attempt === 3) throw e;
+        Utilities.sleep(1000 * attempt);
+      }
     }
-    
-    const batchFolder = outputFolder.createFolder(folderName);
-    return batchFolder.getId();
   },
 
   /**
@@ -39,19 +47,38 @@ const DocumentBuilder = {
    * @param {string} folderId The ID of the destination folder.
    */
   generateChunk: function(reportConfig, chunkPayload, folderId) {
-    const templateFile = DriveApp.getFileById(reportConfig.templateId);
-    const batchFolder = DriveApp.getFolderById(folderId);
+    let templateFile = null;
+    let batchFolder = null;
     
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        templateFile = DriveApp.getFileById(reportConfig.templateId);
+        batchFolder = DriveApp.getFolderById(folderId);
+        break;
+      } catch (e) {
+        if (attempt === 3) throw e;
+        Utilities.sleep(1000 * attempt);
+      }
+    }
+    
+    let lastError = null;
+    let successCount = 0;
+
     chunkPayload.forEach((student) => {
       try {
         if (student.subjects && student.subjects.length > 0) {
           this._buildSingleDocument(student, templateFile, batchFolder, reportConfig.name);
+          successCount++;
         }
       } catch (error) {
+        lastError = error;
         console.error(`Failed to generate document for ${student.name} (${student.adNo}): ${error.message}`);
-        // Continuing to the next student in the chunk to prevent total failure
       }
     });
+
+    if (successCount === 0 && chunkPayload.length > 0 && lastError) {
+      throw lastError;
+    }
   },
 
   /**
@@ -64,56 +91,66 @@ const DocumentBuilder = {
     const paddedAdNo = safeAdNo.padStart(6, '0');
     
     // Format: [reg] [name] [paddedAdno] [shortName]
-    let fileName = `${student.reg} ${student.name} ${paddedAdNo} ${student.shortName || ''}`.trim();
+    let fileName = (student.reg + " " + student.name + " " + paddedAdNo + " " + (student.shortName || '')).trim();
     if (reportName === CONFIG.REPORTS.NEXT_STEPS_SUMMARY.name) {
       fileName += " next-steps";
     }
 
-    // 1. Create physical copy with retry handling for transient Drive storage errors
-    let newDocFile = null;
-    let docId = '';
-    let newDoc = null;
+    let lastError = null;
 
-    for (let attempt = 1; attempt <= 3; attempt++) {
+    // Enclose the full creation and editing pipeline in a transaction retry loop.
+    // If a storage sync error occurs during makeCopy, getBody, saveAndClose, or batchUpdate,
+    // the broken file copy is trashed and recreated cleanly.
+    for (let attempt = 1; attempt <= 5; attempt++) {
+      let newDocFile = null;
+      let docId = '';
+
       try {
-        if (!newDocFile) {
-          newDocFile = templateFile.makeCopy(fileName, destinationFolder);
-          docId = newDocFile.getId();
-        }
-        Utilities.sleep(300); // Allow Drive backend storage propagation
-        newDoc = DocumentApp.openById(docId);
-        break;
-      } catch (e) {
-        if (attempt === 3) throw e;
-        Utilities.sleep(1000 * attempt);
-      }
-    }
-    
-    // --- PHASE 1: Structural Table Building (DocumentApp) ---
-    // We use DocumentApp here because cloning table rows structurally is easiest this way.
-    // We inject the subject text directly into the row, which is highly scoped and fast.
-    const body = newDoc.getBody();
-    
-    this._populateSubjectTable(body, student.subjects);
-    
-    // We MUST save and close the document to flush the structural changes to Google Drive 
-    // before the Docs API attempts to modify the text in Phase 2.
-    newDoc.saveAndClose();
+        // 1. Create physical copy from template
+        newDocFile = templateFile.makeCopy(fileName, destinationFolder);
+        docId = newDocFile.getId();
+        
+        // Incremental pause to allow Google Drive storage backend propagation
+        Utilities.sleep(800 * attempt);
 
-    // --- PHASE 2: High-Speed Global Text Replacement (Docs API) ---
-    // We use the Advanced Google Docs API to replace all global tags (headers, footers, body)
-    // in a single lightning-fast batch request.
-    const requests = this._buildGlobalReplacementRequests(student, paddedAdNo);
+        // 2. Open document handle
+        const newDoc = DocumentApp.openById(docId);
+        const body = newDoc.getBody();
 
-    if (requests.length > 0) {
-      for (let attempt = 1; attempt <= 3; attempt++) {
-        try {
+        // 3. Phase 1: Structural Table Building (DocumentApp)
+        this._populateSubjectTable(body, student.subjects);
+
+        // 4. Save and close to flush structural edits before Docs API operations
+        newDoc.saveAndClose();
+        Utilities.sleep(400);
+
+        // 5. Phase 2: High-Speed Global Text Replacement (Docs API)
+        const requests = this._buildGlobalReplacementRequests(student, paddedAdNo);
+        if (requests.length > 0) {
           Docs.Documents.batchUpdate({ requests: requests }, docId);
-          break;
-        } catch (e) {
-          if (attempt === 3) throw e;
-          Utilities.sleep(1000 * attempt);
         }
+
+        // Execution succeeded
+        return;
+
+      } catch (e) {
+        lastError = e;
+        console.warn(`Attempt ${attempt} failed for ${student.name} (${student.adNo}): ${e.message}`);
+
+        // Trash the failed document copy so un-synced locks are discarded
+        if (newDocFile) {
+          try {
+            newDocFile.setTrashed(true);
+          } catch (trashErr) {
+            // Ignore cleanup errors
+          }
+        }
+
+        if (attempt === 5) {
+          throw new Error(`Storage sync error after 5 attempts: ${e.message}`);
+        }
+
+        Utilities.sleep(1000 * attempt);
       }
     }
   },
