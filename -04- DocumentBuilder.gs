@@ -69,14 +69,29 @@ const DocumentBuilder = {
       fileName += " next-steps";
     }
 
-    // 1. Create the physical file copy
-    const newDocFile = templateFile.makeCopy(fileName, destinationFolder);
-    const docId = newDocFile.getId();
+    // 1. Create physical copy with retry handling for transient Drive storage errors
+    let newDocFile = null;
+    let docId = '';
+    let newDoc = null;
+
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        if (!newDocFile) {
+          newDocFile = templateFile.makeCopy(fileName, destinationFolder);
+          docId = newDocFile.getId();
+        }
+        Utilities.sleep(300); // Allow Drive backend storage propagation
+        newDoc = DocumentApp.openById(docId);
+        break;
+      } catch (e) {
+        if (attempt === 3) throw e;
+        Utilities.sleep(1000 * attempt);
+      }
+    }
     
     // --- PHASE 1: Structural Table Building (DocumentApp) ---
     // We use DocumentApp here because cloning table rows structurally is easiest this way.
     // We inject the subject text directly into the row, which is highly scoped and fast.
-    const newDoc = DocumentApp.openById(docId);
     const body = newDoc.getBody();
     
     this._populateSubjectTable(body, student.subjects);
@@ -91,7 +106,15 @@ const DocumentBuilder = {
     const requests = this._buildGlobalReplacementRequests(student, paddedAdNo);
 
     if (requests.length > 0) {
-      Docs.Documents.batchUpdate({ requests: requests }, docId);
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          Docs.Documents.batchUpdate({ requests: requests }, docId);
+          break;
+        } catch (e) {
+          if (attempt === 3) throw e;
+          Utilities.sleep(1000 * attempt);
+        }
+      }
     }
   },
 
