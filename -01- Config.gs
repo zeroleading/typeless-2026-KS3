@@ -11,9 +11,13 @@ const CONFIG = Object.freeze({
     OUTPUT_FOLDER_ID: '18JTL77flcaOV7Us93W_hJnf3_veATeFp', 
   },
 
-  // 2. Authorisation Controls
-  AUTH: {
+  // 2. Authorisation & Access Controls
+  PERMISSIONS: {
     SUPER_USERS: [
+      'jappleton@csg.school',
+      'tnayagam@csg.school'
+    ],
+    PROTECTION_EDITORS: [
       'jappleton@csg.school',
       'tnayagam@csg.school'
     ],
