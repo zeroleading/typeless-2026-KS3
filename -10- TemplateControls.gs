@@ -18,13 +18,17 @@ function createCopyWithPermissions() {
     // Sheet-level protections
     let sheetProtections = sheets[i].getProtections(SpreadsheetApp.ProtectionType.SHEET);
     for (let j = 0; j < sheetProtections.length; j++) {
-      sheetProtections[j].addEditors(superusers);
+      if (!sheetProtections[j].isWarningOnly()) {
+        sheetProtections[j].addEditors(superusers);
+      }
     }
     
     // Range-level protections
     let rangeProtections = sheets[i].getProtections(SpreadsheetApp.ProtectionType.RANGE);
     for (let k = 0; k < rangeProtections.length; k++) {
-      rangeProtections[k].addEditors(superusers);
+      if (!rangeProtections[k].isWarningOnly()) {
+        rangeProtections[k].addEditors(superusers);
+      }
     }
   }
 }
