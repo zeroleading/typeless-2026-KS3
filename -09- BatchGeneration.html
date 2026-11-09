@@ -102,7 +102,7 @@
       }
       .success-box a:hover { background-color: #e2e8f0; }
 
-      /* --- NEW SPINNER ANIMATION --- */
+      /* Spinner animation */
       .spinner {
         display: inline-block;
         width: 14px;
@@ -135,9 +135,10 @@
     </div>
     
     <div id="step-audit" style="display: none;">
-      <p><strong>⚠️ Missing Data Detected</strong><br>The following students are missing data required for this report. Generating now will leave these fields blank.</p>
+      <p><strong>⚠️ Missing Data Detected</strong><br>The following students are missing data required for this report. Choose how you would like to proceed:</p>
       <div class="audit-box" id="auditList"></div>
-      <button class="btn btn-danger" id="forceBtn" onclick="initBatch(true)">Ignore Warnings & Generate Anyway</button>
+      <button class="btn btn-danger" id="forceBtn" onclick="initBatch('ignore')">Proceed with Blanks</button>
+      <button class="btn" id="dropBtn" onclick="initBatch('drop')" style="background-color: #ed8936; margin-top: 10px;">Drop Incomplete Subjects</button>
       <div id="auditStatus" class="status-msg"></div>
     </div>
     
@@ -165,6 +166,7 @@
       let batchFolderId = '';
       let totalStudents = 0;
       let currentIndex = 0;
+      let currentAuditMode = 'ignore';
 
       function switchView(stepId) {
         document.getElementById('step-start').style.display = 'none';
@@ -174,10 +176,12 @@
         document.getElementById(stepId).style.display = 'block';
       }
 
-      function initBatch(forceProceed) {
-        // Disable buttons and show loading spinner
-        if (forceProceed) {
+      function initBatch(auditMode) {
+        // Disable buttons and show loading spinner depending on the active view
+        if (auditMode) {
+          currentAuditMode = auditMode;
           document.getElementById('forceBtn').disabled = true;
+          document.getElementById('dropBtn').disabled = true;
           document.getElementById('auditStatus').innerHTML = '<span class="processing-text"><div class="spinner"></div> Preparing batch folder...</span>';
         } else {
           document.getElementById('startBtn').disabled = true;
@@ -197,7 +201,7 @@
               response.issues.forEach(i => html += '<li>' + i + '</li>');
               html += '</ul>';
               document.getElementById('auditList').innerHTML = html;
-              document.getElementById('startStatus').innerHTML = ''; // Clear start text
+              document.getElementById('startStatus').innerHTML = '';
               switchView('step-audit');
             } else if (response.status === 'ready') {
               batchFolderId = response.folderId;
@@ -210,15 +214,16 @@
           })
           .withFailureHandler(function(err) {
             const errHtml = '<span style="color:#e53e3e;">System Error: ' + err.message + '</span>';
-            if (forceProceed) {
+            if (auditMode) {
               document.getElementById('auditStatus').innerHTML = errHtml;
               document.getElementById('forceBtn').disabled = false;
+              document.getElementById('dropBtn').disabled = false;
             } else {
               document.getElementById('startStatus').innerHTML = errHtml;
               document.getElementById('startBtn').disabled = false;
             }
           })
-          .server_initBatch(configKey, forceProceed);
+          .server_initBatch(configKey, auditMode);
       }
 
       function processNextChunk() {
@@ -238,18 +243,18 @@
           .withSuccessHandler(function() {
             currentIndex += chunkSize;
             
-            // Update Progress Bar
+            // Update progress bar percentage
             const percent = Math.min(Math.round((currentIndex / totalStudents) * 100), 100);
             document.getElementById('pBar').style.width = percent + '%';
             document.getElementById('pText').innerText = Math.min(currentIndex, totalStudents) + ' / ' + totalStudents + ' Students';
             
-            // Trigger next loop
+            // Trigger next loop cycle
             processNextChunk();
           })
           .withFailureHandler(function(err) {
             document.getElementById('runStatus').innerHTML = '<span style="color:#e53e3e;">Failed at index ' + currentIndex + ': ' + err.message + '<br>Please close and try again.</span>';
           })
-          .server_processChunk(configKey, batchFolderId, currentIndex, chunkSize);
+          .server_processChunk(configKey, batchFolderId, currentIndex, chunkSize, currentAuditMode);
       }
     </script>
   </body>

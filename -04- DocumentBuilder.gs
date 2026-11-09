@@ -1,28 +1,30 @@
 /**
- * DocumentBuilder.gs
- * Handles the generation of Google Docs from templates using a high-speed hybrid approach.
+ * @fileoverview DocumentBuilder.gs (KS3)
+ * Handles the generation of Google Docs from templates using a high-speed hybrid approach:
+ * DocumentApp for row duplication and the Advanced Google Docs API for global tag replacement.
  */
 
 const DocumentBuilder = {
 
-  // --- CHUNKING ENGINE METHODS ---
+  // ---------------------------------------------------------------------------
+  // 1. Chunking Engine Methods
+  // ---------------------------------------------------------------------------
 
   /**
-   * Creates the destination folder in Google Drive.
-   * @param {Object} reportConfig The configuration for the current report.
-   * @param {Object} sampleStudent A single student record to extract global data from.
-   * @returns {string} The ID of the newly created folder.
+   * Creates the destination batch folder in Google Drive.
+   * @param {Object} reportConfig Target report profile configuration.
+   * @param {Object} sampleStudent A single student record used to derive folder naming tokens.
+   * @return {string} The ID of the newly created batch folder.
    */
   createBatchFolder: function(reportConfig, sampleStudent) {
     const outputFolder = DriveApp.getFolderById(CONFIG.GLOBAL.OUTPUT_FOLDER_ID);
     const dateStr = Utilities.formatDate(new Date(), "Europe/London", "yyyy-MM-dd");
     
-    // Extract globals from the sample student for folder naming
+    // Extract metadata tokens from sample student to structure clean archive names
     const academicYear = sampleStudent?.academicYear || '';
     const collection = sampleStudent?.collection || '';
     const yearGroup = sampleStudent?.yearGroup || '';
     
-    // Format: [academicYear] [collection] [yearGroup] [datestamp]
     let folderName = `${academicYear} ${collection} ${yearGroup} ${dateStr}`.trim();
     if (reportConfig.name === CONFIG.REPORTS.NEXT_STEPS_SUMMARY.name) {
       folderName += " next-steps";
@@ -33,61 +35,99 @@ const DocumentBuilder = {
   },
 
   /**
-   * Generates a single chunk of documents.
-   * @param {Object} reportConfig The configuration for the current report.
-   * @param {Array} chunkPayload The subset of students to process.
-   * @param {string} folderId The ID of the destination folder.
+   * Generates a single chunk of documents, honouring the audit pruning mode.
+   * @param {Object} reportConfig Active report configuration profile.
+   * @param {Array<Object>} chunkPayload Subset of student records to process in this execution.
+   * @param {string} folderId Google Drive destination folder identifier.
+   * @param {string} [auditMode='ignore'] Audit decision flag ('ignore' or 'drop').
    */
-  generateChunk: function(reportConfig, chunkPayload, folderId) {
+  generateChunk: function(reportConfig, chunkPayload, folderId, auditMode = 'ignore') {
     const templateFile = DriveApp.getFileById(reportConfig.templateId);
     const batchFolder = DriveApp.getFolderById(folderId);
     
     chunkPayload.forEach((student) => {
       try {
-        if (student.subjects && student.subjects.length > 0) {
+        // Filter incomplete subjects if the user elected to prune them during pre-flight review
+        let validSubjects = student.subjects || [];
+        if (auditMode === 'drop') {
+          validSubjects = validSubjects.filter(subj => this._isSubjectComplete(subj, reportConfig.name));
+        }
+
+        // Generate the document only if at least one complete subject remains
+        if (validSubjects.length > 0) {
+          student.subjects = validSubjects;
           this._buildSingleDocument(student, templateFile, batchFolder, reportConfig.name);
         }
       } catch (error) {
+        // Log individual document failures defensively to avoid aborting the entire chunk
         console.error(`Failed to generate document for ${student.name} (${student.adNo}): ${error.message}`);
-        // Continuing to the next student in the chunk to prevent total failure
       }
     });
   },
 
   /**
-   * Core generation logic combining DocumentApp (structural) and Docs API (text replacement).
+   * Evaluates whether an individual subject record satisfies completeness criteria.
+   * Synchronised with the pre-flight checks in DataService.gs.
    * @private
+   * @param {Object} subj Subject assessment record.
+   * @param {string} [reportName] Canonical report title.
+   * @return {boolean} True if all mandatory indicators are present, false otherwise.
+   */
+  _isSubjectComplete: function(subj, reportName) {
+    const hasCrnt = subj.crnt !== '' && subj.crnt !== undefined;
+    const hasCi1 = subj.ci1 !== '' && subj.ci1 !== undefined;
+    const hasCi2 = subj.ci2 !== '' && subj.ci2 !== undefined;
+    const hasCi3 = subj.ci3 !== '' && subj.ci3 !== undefined;
+    const hasCi4 = subj.ci4 !== '' && subj.ci4 !== undefined;
+    
+    // Ensure at least one Next Step column has been selected
+    const hasNextSteps = (subj.nextSteps1 && String(subj.nextSteps1).trim() !== '') ||
+                         (subj.nextSteps2 && String(subj.nextSteps2).trim() !== '');
+
+    return hasCrnt && hasCi1 && hasCi2 && hasCi3 && hasCi4 && hasNextSteps;
+  },
+
+  // ---------------------------------------------------------------------------
+  // 2. Document Assembly Implementation
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Core generation logic combining DocumentApp (structural row duplication)
+   * and Docs API batchUpdate (high-speed global tag replacement).
+   * @private
+   * @param {Object} student Aggregated student data object.
+   * @param {GoogleAppsScript.Drive.File} templateFile Source Google Doc template file.
+   * @param {GoogleAppsScript.Drive.Folder} destinationFolder Target Drive folder.
+   * @param {string} reportName Canonical report title.
    */
   _buildSingleDocument: function(student, templateFile, destinationFolder, reportName) {
-    // Defensive check to ensure adNo exists before padding
+    // Standardise admission numbers to 6 digits to guarantee consistent sorting and identification
     const safeAdNo = student.adNo ? String(student.adNo) : '000000';
     const paddedAdNo = safeAdNo.padStart(6, '0');
     
-    // Format: [reg] [name] [paddedAdno] [shortName]
     let fileName = `${student.reg} ${student.name} ${paddedAdNo} ${student.shortName || ''}`.trim();
     if (reportName === CONFIG.REPORTS.NEXT_STEPS_SUMMARY.name) {
       fileName += " next-steps";
     }
 
-    // 1. Create the physical file copy
+    // 1. Create file copy in destination folder
     const newDocFile = templateFile.makeCopy(fileName, destinationFolder);
     const docId = newDocFile.getId();
     
     // --- PHASE 1: Structural Table Building (DocumentApp) ---
-    // We use DocumentApp here because cloning table rows structurally is easiest this way.
-    // We inject the subject text directly into the row, which is highly scoped and fast.
+    // DocumentApp is utilised specifically for table manipulation, which cannot be cleanly
+    // performed via the REST API without complex structural index calculations.
     const newDoc = DocumentApp.openById(docId);
     const body = newDoc.getBody();
     
     this._populateSubjectTable(body, student.subjects);
     
-    // We MUST save and close the document to flush the structural changes to Google Drive 
-    // before the Docs API attempts to modify the text in Phase 2.
+    // Flush structural updates to Google Drive before handing off to the REST API in Phase 2
     newDoc.saveAndClose();
 
     // --- PHASE 2: High-Speed Global Text Replacement (Docs API) ---
-    // We use the Advanced Google Docs API to replace all global tags (headers, footers, body)
-    // in a single lightning-fast batch request.
+    // The Advanced Google Docs API executes global replacements across body, headers,
+    // and footers in a single atomic request, bypassing DocumentApp execution overhead.
     const requests = this._buildGlobalReplacementRequests(student, paddedAdNo);
 
     if (requests.length > 0) {
@@ -96,13 +136,16 @@ const DocumentBuilder = {
   },
 
   /**
-   * Constructs the payload required for the Google Docs API batchUpdate.
+   * Constructs the payload required for the Google Docs API batchUpdate call.
    * @private
+   * @param {Object} student Student data record.
+   * @param {string} paddedAdNo Six-digit formatted admission number.
+   * @return {Array<Object>} List of replaceAllText structural request objects.
    */
   _buildGlobalReplacementRequests: function(student, paddedAdNo) {
     const dateStr = Utilities.formatDate(new Date(), "Europe/London", "MMMM yyyy");
     
-    // Map of all global tags to their target values
+    // Map of template placeholder tokens to student metrics
     const replacements = {
       '_Name_': student.name || '',
       '_Reg_': student.reg || '',
@@ -123,24 +166,26 @@ const DocumentBuilder = {
       replacements['_PSHE_'] = student.tutorInfo.pshe || '-';
     }
 
-    // Convert the map into the specific array structure required by the Docs API
+    // Convert key-value pairs into the payload schema required by Docs.Documents.batchUpdate
     return Object.keys(replacements).map(tag => ({
       replaceAllText: {
         containsText: { text: tag, matchCase: true },
-        replaceText: String(replacements[tag]) // Ensure it is always cast as a string
+        replaceText: String(replacements[tag])
       }
     }));
   },
 
   /**
-   * Locates the subject template row, duplicates it, and cleans up the original.
+   * Locates the subject template row, clones it for each subject, and cleans up the placeholder.
    * @private
+   * @param {GoogleAppsScript.Document.Body} body Document body element.
+   * @param {Array<Object>} subjects Filtered list of subjects.
    */
   _populateSubjectTable: function(body, subjects) {
     const tables = body.getTables();
     if (tables.length === 0) return;
 
-    // Find the table that contains our template tags
+    // Search across document tables for the prototype row marker
     let targetTable = null;
     let templateRow = null;
     let templateRowIndex = -1;
@@ -154,8 +199,7 @@ const DocumentBuilder = {
           templateRow = row.copy();
           templateRowIndex = r;
           
-          // Hygiene: Always remove the original template row so it doesn't linger 
-          // if the student has no subjects.
+          // Remove the prototype row to prevent blank placeholder remnants in the final document
           table.removeRow(r);
           break;
         }
@@ -165,12 +209,11 @@ const DocumentBuilder = {
 
     if (!targetTable || !templateRow) return;
 
-    // Add a row for each subject and replace the specific tags locally within that row object
+    // Inject a duplicated row populated with subject assessments
     if (subjects && subjects.length > 0) {
       subjects.forEach((subj, index) => {
         const newRow = templateRow.copy();
         
-        // Because these replacements are scoped to 'newRow', they execute extremely quickly
         newRow.replaceText('{{subjectName}}', subj.subjectName || '');
         newRow.replaceText('{{teacher}}', subj.teacher || '');
         newRow.replaceText('{{tg}}', subj.tg || '');
@@ -186,5 +229,4 @@ const DocumentBuilder = {
       });
     }
   }
-
 };
